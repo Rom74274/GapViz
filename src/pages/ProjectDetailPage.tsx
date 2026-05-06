@@ -4,6 +4,7 @@ import { ArrowLeft, User, Users, AlertCircle } from 'lucide-react';
 import { db } from '@/lib/db';
 import { RunClusteringButton } from '@/components/clustering/RunClusteringButton';
 import { ClusterList } from '@/components/clustering/ClusterList';
+import { GraphCanvas } from '@/components/graph/GraphCanvas';
 
 export function ProjectDetailPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -105,16 +106,15 @@ export function ProjectDetailPage() {
       <section className="mt-8 space-y-4">
         <h2 className="text-sm font-semibold">Clustering</h2>
         <RunClusteringButton projectId={projectId!} />
-        <ClusterList projectId={projectId!} />
       </section>
 
-      <section className="mt-8 rounded-lg border border-dashed border-border-subtle bg-bg-surface/50 p-8 text-center">
-        <p className="text-text-secondary text-sm">
-          Le graph interactif apparaîtra ici à l'étape suivante.
-        </p>
-        <p className="mt-1 text-xs text-text-muted">
-          Étape 5 — MindMap D3 + Canvas
-        </p>
+      <section className="mt-6">
+        <h2 className="mb-3 text-sm font-semibold">MindMap</h2>
+        <GraphCanvas projectId={projectId!} />
+      </section>
+
+      <section className="mt-6">
+        <ClusterList projectId={projectId!} />
       </section>
     </div>
   );
