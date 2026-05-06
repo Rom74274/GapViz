@@ -50,3 +50,9 @@ export function parseIntent(v: string | undefined): Intent[] {
     .map((x) => x.trim().toLowerCase())
     .filter((x): x is Intent => INTENT_VALUES.has(x as Intent));
 }
+
+export function parseBoolean(v: string | undefined): boolean {
+  if (!v) return false;
+  const s = v.toLowerCase().trim();
+  return s === 'true' || s === '1' || s === 'yes' || s === 'oui';
+}

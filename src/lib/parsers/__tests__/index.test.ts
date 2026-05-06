@@ -142,6 +142,44 @@ describe('parseCSVText — BOM handling', () => {
   });
 });
 
+describe('parseCSVText — Ahrefs real export (boolean intent columns)', () => {
+  const text = fixture('ahrefs.real.csv');
+  const result = parseCSVText(text);
+
+  it('detects Ahrefs from "Volume" + "Keyword Difficulty"', () => {
+    expect(result.format).toBe('ahrefs');
+  });
+
+  it('parses 5 rows', () => {
+    expect(result.rows).toHaveLength(5);
+  });
+
+  it('reads "Current position" as position', () => {
+    const row = result.rows.find((r) => r.keyword === 'logiciel planning')!;
+    expect(row.position).toBe(3);
+  });
+
+  it('reads "Keyword Difficulty" as kd', () => {
+    const row = result.rows.find((r) => r.keyword === 'logiciel planning')!;
+    expect(row.kd).toBe(42);
+  });
+
+  it('extracts intent from boolean columns (single)', () => {
+    const row = result.rows.find((r) => r.keyword === 'sirh')!;
+    expect(row.intent).toEqual(['informational']);
+  });
+
+  it('extracts intent from boolean columns (multiple)', () => {
+    const row = result.rows.find((r) => r.keyword === 'gestion des plannings')!;
+    expect(row.intent).toEqual(['informational', 'commercial']);
+  });
+
+  it('extracts navigational intent', () => {
+    const row = result.rows.find((r) => r.keyword === 'skello connexion')!;
+    expect(row.intent).toEqual(['navigational']);
+  });
+});
+
 describe('parseCSVText — forceFormat override', () => {
   it('respects forceFormat option', () => {
     const text = 'Keyword,Volume\nfoo,100\n';

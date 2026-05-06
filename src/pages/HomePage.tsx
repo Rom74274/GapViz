@@ -25,15 +25,21 @@ export function HomePage() {
 
       <div className="mt-10 flex items-center gap-3">
         <Link
-          to="/projects"
+          to="/projects/new"
           className="inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-accent-hover"
         >
-          Voir mes projets
+          Créer un projet
           <ArrowRight size={16} />
         </Link>
         <Link
-          to="/settings"
+          to="/projects"
           className="inline-flex items-center gap-2 rounded-md border border-border-subtle bg-bg-surface px-4 py-2.5 text-sm font-medium text-text-secondary transition-colors hover:border-border-strong hover:text-text-primary"
+        >
+          Voir mes projets
+        </Link>
+        <Link
+          to="/settings"
+          className="inline-flex items-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium text-text-secondary transition-colors hover:text-text-primary"
         >
           Configurer ma clé API
         </Link>

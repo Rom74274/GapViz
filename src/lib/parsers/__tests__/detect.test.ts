@@ -14,10 +14,28 @@ describe('detectFormat', () => {
     ).toBe('semrush');
   });
 
-  it('detects SEMrush from "Keyword Difficulty"', () => {
+  it('detects Ahrefs from real export with "Volume" + "Keyword Difficulty"', () => {
+    expect(
+      detectFormat([
+        'Keyword',
+        'Volume',
+        'Keyword Difficulty',
+        'CPC',
+        'Current position',
+        'URL',
+        'Traffic',
+        'Is Informational',
+        'Is Commercial',
+        'Is Transactional',
+        'Is Navigational',
+      ]),
+    ).toBe('ahrefs');
+  });
+
+  it('falls back to Ahrefs when only "Keyword Difficulty" present (no Search Volume)', () => {
     expect(
       detectFormat(['Keyword', 'Keyword Difficulty', 'CPC']),
-    ).toBe('semrush');
+    ).toBe('ahrefs');
   });
 
   it('detects GSC from "Impressions" + "Clicks"', () => {
@@ -42,7 +60,7 @@ describe('detectFormat', () => {
     ).toBe('gsc');
   });
 
-  it('prefers SEMrush over Ahrefs when both signals present', () => {
+  it('prefers SEMrush when "Search Volume" present even alongside "KD"', () => {
     expect(
       detectFormat(['Keyword', 'Search Volume', 'KD']),
     ).toBe('semrush');
