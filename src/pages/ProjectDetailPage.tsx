@@ -2,6 +2,8 @@ import { Link, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowLeft, User, Users, AlertCircle } from 'lucide-react';
 import { db } from '@/lib/db';
+import { RunClusteringButton } from '@/components/clustering/RunClusteringButton';
+import { ClusterList } from '@/components/clustering/ClusterList';
 
 export function ProjectDetailPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -100,12 +102,18 @@ export function ProjectDetailPage() {
         </ul>
       </section>
 
+      <section className="mt-8 space-y-4">
+        <h2 className="text-sm font-semibold">Clustering</h2>
+        <RunClusteringButton projectId={projectId!} />
+        <ClusterList projectId={projectId!} />
+      </section>
+
       <section className="mt-8 rounded-lg border border-dashed border-border-subtle bg-bg-surface/50 p-8 text-center">
-        <p className="text-text-secondary">
-          Le graph de clusters apparaîtra ici une fois le clustering Claude lancé.
+        <p className="text-text-secondary text-sm">
+          Le graph interactif apparaîtra ici à l'étape suivante.
         </p>
         <p className="mt-1 text-xs text-text-muted">
-          Étape 4 — clustering Claude — à venir.
+          Étape 5 — MindMap D3 + Canvas
         </p>
       </section>
     </div>
