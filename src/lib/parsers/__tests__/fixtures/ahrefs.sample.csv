@@ -1,0 +1,6 @@
+Keyword,Country,Position,Volume,KD,CPC,URL,Intent
+logiciel planning,fr,3,8100,42,2.50,https://www.skello.io/planning,Commercial
+gestion des plannings,fr,12,3600,38,1.80,https://www.skello.io/gestion,"Informational, Commercial"
+planning équipe,fr,5,2900,35,2.10,https://www.skello.io/equipe,Commercial
+,fr,1,100,10,0.50,https://example.com/empty,
+planning gratuit,fr,8,1300,28,,https://www.skello.io/gratuit,Informational

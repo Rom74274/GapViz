@@ -1,0 +1,5 @@
+Keyword,Volume,KD,CPC,Position,URL
+keyword grosVolume,"12,500",45,1.80,3,https://example.com/a
+keyword volMillions,"1,234,567",80,3.50,1,https://example.com/b
+keyword vide,,30,2.00,5,https://example.com/c
+keyword tiret,-,20,-,10,https://example.com/d
