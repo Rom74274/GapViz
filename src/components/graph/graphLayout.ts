@@ -19,7 +19,6 @@ interface BaseNode {
   id: string;
   kind: NodeKind;
   radius: number;
-  // Mutated par d3-force.
   x?: number;
   y?: number;
   vx?: number;
@@ -41,6 +40,9 @@ export interface ClusterMetaNode extends BaseNode {
   name: string;
   totalVolume: number;
   kwCount: number;
+  isMyCovered: boolean; // au moins un KW du cluster a une source isMe
+  myKwCount: number;
+  competitorOnlyKwCount: number;
 }
 
 export interface KeywordNode extends BaseNode {
@@ -53,18 +55,24 @@ export interface KeywordNode extends BaseNode {
   clusterId: string;
   clusterName: string;
   sources: NodeSource[];
-  isGap: boolean; // pas positionné par mon site
+  isGap: boolean;
+  primaryColor: string; // 1ʳᵉ source utilisée pour halos / glow
 }
 
 export type GraphNode = CenterNode | ClusterMetaNode | KeywordNode;
 
-export type LinkKind = 'center-cluster' | 'cluster-keyword' | 'keyword-keyword';
+export type LinkKind =
+  | 'center-cluster'
+  | 'cluster-keyword'
+  | 'keyword-keyword'
+  | 'cluster-cluster';
 
 export interface GraphLink {
   source: string | GraphNode;
   target: string | GraphNode;
   kind: LinkKind;
   color: string;
+  weight?: number;
 }
 
 export interface BuiltGraph {
@@ -83,11 +91,14 @@ const KEYWORD_PREFIX = '__kw__:';
 const UNCLUSTERED_KEY = '__unclustered__';
 const UNCLUSTERED_NAME = 'Sans cluster';
 
-const KW_MIN_RADIUS = 3;
-const KW_MAX_RADIUS = 24;
-const CLUSTER_MIN_RADIUS = 16;
+const KW_MIN_RADIUS = 2;
+const KW_MAX_RADIUS = 35;
+const CLUSTER_MIN_RADIUS = 14;
 const CLUSTER_MAX_RADIUS = 32;
-const CENTER_RADIUS = 38;
+const CENTER_RADIUS = 42;
+
+const INTER_CLUSTER_THRESHOLD = 2;
+const INTER_CLUSTER_MAX_PER_CLUSTER = 3;
 
 // ---------------------------------------------------------------------------
 // Builder
@@ -110,7 +121,6 @@ export function buildGraph({
   const clusterById = new Map(clusters.map((c) => [c.id, c]));
   const meCompetitor = competitors.find((c) => c.isMe);
 
-  // Centre = mon site.
   const centerNode: CenterNode = {
     id: CENTER_ID,
     kind: 'center',
@@ -120,7 +130,7 @@ export function buildGraph({
     color: meCompetitor?.color || '#3b82f6',
   };
 
-  // Groupe les KWs par texte normalisé (multi-source merge).
+  // Group KWs by normalized text.
   const kwGroups = new Map<string, Keyword[]>();
   for (const k of keywords) {
     const key = k.keyword.trim().toLowerCase();
@@ -135,7 +145,6 @@ export function buildGraph({
   }
   const maxVolume = Math.max(1, ...allVolumes);
 
-  // Clusters → keywords mapping (et compteurs).
   const kwsByCluster = new Map<string, KeywordNode[]>();
   const keywordNodes: KeywordNode[] = [];
 
@@ -147,6 +156,7 @@ export function buildGraph({
     const clusterName =
       clusterById.get(first.clusterId ?? '')?.name ?? UNCLUSTERED_NAME;
     const isGap = !sources.some((s) => s.isMe);
+    const primaryColor = sources[0]?.color ?? '#6a6a8a';
 
     const node: KeywordNode = {
       id: `${KEYWORD_PREFIX}${first.keyword.trim().toLowerCase()}`,
@@ -160,7 +170,8 @@ export function buildGraph({
       clusterName,
       sources,
       isGap,
-      radius: scaleRadius(volume, maxVolume, KW_MIN_RADIUS, KW_MAX_RADIUS, true),
+      primaryColor,
+      radius: scaleRadius(volume, maxVolume, KW_MIN_RADIUS, KW_MAX_RADIUS, 'pow', 0.6),
     };
     keywordNodes.push(node);
     const list = kwsByCluster.get(clusterId);
@@ -169,9 +180,16 @@ export function buildGraph({
   }
 
   // Cluster meta-nodes.
+  const maxClusterSize = Math.max(
+    1,
+    ...[...kwsByCluster.values()].map((l) => l.length),
+  );
   const clusterMetaNodes: ClusterMetaNode[] = [];
   for (const [clusterId, kws] of kwsByCluster) {
     const totalVolume = kws.reduce((s, k) => s + k.volume, 0);
+    const myKws = kws.filter((k) => !k.isGap);
+    const competitorOnlyKws = kws.filter((k) => k.isGap);
+    const isMyCovered = myKws.length > 0;
     const name =
       clusterId === UNCLUSTERED_KEY
         ? UNCLUSTERED_NAME
@@ -183,17 +201,20 @@ export function buildGraph({
       name,
       totalVolume,
       kwCount: kws.length,
+      myKwCount: myKws.length,
+      competitorOnlyKwCount: competitorOnlyKws.length,
+      isMyCovered,
       radius: scaleRadius(
         kws.length,
-        Math.max(1, ...[...kwsByCluster.values()].map((l) => l.length)),
+        maxClusterSize,
         CLUSTER_MIN_RADIUS,
         CLUSTER_MAX_RADIUS,
-        false,
+        'pow',
+        0.6,
       ),
     });
   }
 
-  // Liens.
   const links: GraphLink[] = [];
 
   // 1) center → cluster
@@ -214,12 +235,12 @@ export function buildGraph({
         source: c.id,
         target: kw.id,
         kind: 'cluster-keyword',
-        color: centerNode.color,
+        color: kw.primaryColor,
       });
     }
   }
 
-  // 3) keyword ↔ keyword (intra-cluster mesh, 2 voisins par KW dans l'ordre du volume)
+  // 3) intra-cluster keyword mesh.
   for (const c of clusterMetaNodes) {
     const kws = (kwsByCluster.get(c.clusterId) ?? []).slice();
     if (kws.length < 2) continue;
@@ -235,17 +256,79 @@ export function buildGraph({
           source: cur.id,
           target: next.id,
           kind: 'keyword-keyword',
-          color: '#e6e6f0',
+          color: cur.primaryColor,
         });
       }
     }
   }
+
+  // 4) inter-cluster links basés sur les domaines partagés.
+  links.push(...buildInterClusterLinks(clusterMetaNodes, kwsByCluster));
 
   return {
     nodes: [centerNode, ...clusterMetaNodes, ...keywordNodes],
     links,
     centerNode,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Inter-cluster links
+// ---------------------------------------------------------------------------
+
+function buildInterClusterLinks(
+  clusterMetas: ClusterMetaNode[],
+  kwsByCluster: Map<string, KeywordNode[]>,
+): GraphLink[] {
+  const domainsByCluster = new Map<string, Set<string>>();
+  for (const c of clusterMetas) {
+    const set = new Set<string>();
+    const kws = kwsByCluster.get(c.clusterId) ?? [];
+    for (const k of kws) {
+      for (const s of k.sources) set.add(s.domain);
+    }
+    domainsByCluster.set(c.id, set);
+  }
+
+  // Compute weight (= shared domains) for every cluster pair, threshold + dedup.
+  type Candidate = { a: ClusterMetaNode; b: ClusterMetaNode; weight: number };
+  const candidates: Candidate[] = [];
+  for (let i = 0; i < clusterMetas.length; i++) {
+    for (let j = i + 1; j < clusterMetas.length; j++) {
+      const a = clusterMetas[i]!;
+      const b = clusterMetas[j]!;
+      const da = domainsByCluster.get(a.id)!;
+      const db_ = domainsByCluster.get(b.id)!;
+      let shared = 0;
+      for (const d of da) if (db_.has(d)) shared++;
+      if (shared >= INTER_CLUSTER_THRESHOLD) {
+        candidates.push({ a, b, weight: shared });
+      }
+    }
+  }
+
+  // Limite par cluster (top N) — on collecte le degré, on ne pousse que si
+  // chacun des deux clusters n'a pas dépassé sa quota.
+  candidates.sort((x, y) => y.weight - x.weight);
+  const degree = new Map<string, number>();
+  const links: GraphLink[] = [];
+  for (const { a, b, weight } of candidates) {
+    const da = degree.get(a.id) ?? 0;
+    const db_ = degree.get(b.id) ?? 0;
+    if (da >= INTER_CLUSTER_MAX_PER_CLUSTER || db_ >= INTER_CLUSTER_MAX_PER_CLUSTER) {
+      continue;
+    }
+    links.push({
+      source: a.id,
+      target: b.id,
+      kind: 'cluster-cluster',
+      color: '#9ca3c4',
+      weight,
+    });
+    degree.set(a.id, da + 1);
+    degree.set(b.id, db_ + 1);
+  }
+  return links;
 }
 
 // ---------------------------------------------------------------------------
@@ -281,32 +364,35 @@ function mergeSources(
   });
 }
 
+export type ScaleMode = 'linear' | 'log' | 'pow';
+
 export function scaleRadius(
   value: number,
   maxValue: number,
   min: number,
   max: number,
-  log: boolean,
+  mode: ScaleMode = 'linear',
+  power = 0.5,
 ): number {
   if (value <= 0 || maxValue <= 0) return min;
   let t: number;
-  if (log) {
+  if (mode === 'log') {
     const lv = Math.log10(value + 1);
     const lmax = Math.log10(maxValue + 1);
     t = lmax > 0 ? lv / lmax : 0;
+  } else if (mode === 'pow') {
+    t = Math.pow(value / maxValue, power);
   } else {
     t = value / maxValue;
   }
   return min + (max - min) * Math.max(0, Math.min(1, t));
 }
 
-// Rétrocompat avec les tests existants (V1 simple).
+// Compatibilité avec l'API précédente.
 export function radiusFromVolume(volume: number, maxVolume: number): number {
-  return scaleRadius(volume, maxVolume, 4, 26, true);
+  return scaleRadius(volume, maxVolume, 4, 26, 'log');
 }
 
-// Sera utilisé par le hit-testing pour exclure le centre des cibles cliquables
-// (le centre n'a pas de sidebar dédiée).
 export function isClickable(node: GraphNode): boolean {
   return node.kind !== 'center';
 }

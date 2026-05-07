@@ -163,6 +163,62 @@ describe('buildGraph', () => {
     expect(kkLinks).toHaveLength(20); // 10 KWs × 2 voisins
   });
 
+  it('flags isMyCovered=true on cluster meta-node when at least one KW is mine', () => {
+    const g = buildGraph({
+      ...BUILD_OPTS,
+      keywords: [
+        kw({ keyword: 'a', sourceDomain: 'skello.io', clusterId: 'c1' }),
+        kw({ keyword: 'b', sourceDomain: 'factorial.fr', clusterId: 'c1' }),
+      ],
+    });
+    const meta = g.nodes.find((n) => n.kind === 'cluster' && n.clusterId === 'c1');
+    expect(meta).toBeDefined();
+    expect((meta as { isMyCovered: boolean }).isMyCovered).toBe(true);
+  });
+
+  it('flags isMyCovered=false when only competitors rank in the cluster', () => {
+    const g = buildGraph({
+      ...BUILD_OPTS,
+      keywords: [
+        kw({ keyword: 'a', sourceDomain: 'factorial.fr', clusterId: 'c1' }),
+        kw({ keyword: 'b', sourceDomain: 'payfit.com', clusterId: 'c1' }),
+      ],
+    });
+    const meta = g.nodes.find((n) => n.kind === 'cluster' && n.clusterId === 'c1');
+    expect((meta as { isMyCovered: boolean }).isMyCovered).toBe(false);
+    expect((meta as { myKwCount: number }).myKwCount).toBe(0);
+    expect((meta as { competitorOnlyKwCount: number }).competitorOnlyKwCount).toBe(2);
+  });
+
+  it('emits inter-cluster links when clusters share >= 2 source domains', () => {
+    const g = buildGraph({
+      ...BUILD_OPTS,
+      keywords: [
+        // Cluster c1: skello + factorial
+        kw({ keyword: 'a', sourceDomain: 'skello.io', clusterId: 'c1' }),
+        kw({ keyword: 'b', sourceDomain: 'factorial.fr', clusterId: 'c1' }),
+        // Cluster c2: skello + factorial (same shared = 2)
+        kw({ keyword: 'c', sourceDomain: 'skello.io', clusterId: 'c2' }),
+        kw({ keyword: 'd', sourceDomain: 'factorial.fr', clusterId: 'c2' }),
+      ],
+    });
+    const ccLinks = g.links.filter((l) => l.kind === 'cluster-cluster');
+    expect(ccLinks).toHaveLength(1);
+    expect(ccLinks[0]!.weight).toBe(2);
+  });
+
+  it('does NOT emit inter-cluster link when only 1 domain shared (below threshold)', () => {
+    const g = buildGraph({
+      ...BUILD_OPTS,
+      keywords: [
+        kw({ keyword: 'a', sourceDomain: 'skello.io', clusterId: 'c1' }),
+        kw({ keyword: 'b', sourceDomain: 'skello.io', clusterId: 'c2' }),
+      ],
+    });
+    const ccLinks = g.links.filter((l) => l.kind === 'cluster-cluster');
+    expect(ccLinks).toHaveLength(0);
+  });
+
   it('uses 1 neighbor per KW for small clusters (<= 4)', () => {
     const keywords: Keyword[] = [];
     for (let i = 0; i < 3; i++) {
@@ -197,21 +253,34 @@ describe('buildGraph', () => {
 
 describe('scaleRadius', () => {
   it('returns min when value is 0', () => {
-    expect(scaleRadius(0, 100, 5, 20, false)).toBe(5);
+    expect(scaleRadius(0, 100, 5, 20, 'linear')).toBe(5);
   });
 
   it('returns max when value equals maxValue (linear)', () => {
-    expect(scaleRadius(100, 100, 5, 20, false)).toBe(20);
+    expect(scaleRadius(100, 100, 5, 20, 'linear')).toBe(20);
   });
 
   it('clamps to max when value exceeds maxValue', () => {
-    expect(scaleRadius(200, 100, 5, 20, false)).toBe(20);
+    expect(scaleRadius(200, 100, 5, 20, 'linear')).toBe(20);
   });
 
-  it('uses log scale when log=true', () => {
-    const linear = scaleRadius(10, 1000, 0, 100, false);
-    const log = scaleRadius(10, 1000, 0, 100, true);
+  it('uses log scale when mode=log', () => {
+    const linear = scaleRadius(10, 1000, 0, 100, 'linear');
+    const log = scaleRadius(10, 1000, 0, 100, 'log');
     expect(log).toBeGreaterThan(linear);
+  });
+
+  it('pow with 0.6 amplifies low values vs linear', () => {
+    const linear = scaleRadius(100, 10000, 0, 100, 'linear');
+    const pow = scaleRadius(100, 10000, 0, 100, 'pow', 0.6);
+    expect(pow).toBeGreaterThan(linear);
+  });
+
+  it('pow gives ~10x ratio between large and small values (Romain spec)', () => {
+    const small = scaleRadius(300, 66000, 2, 35, 'pow', 0.6);
+    const large = scaleRadius(66000, 66000, 2, 35, 'pow', 0.6);
+    expect(large / small).toBeGreaterThan(8);
+    expect(large / small).toBeLessThan(15);
   });
 });
 
@@ -249,6 +318,7 @@ describe('isClickable', () => {
       clusterName: '',
       sources: [],
       isGap: false,
+      primaryColor: '#000000',
     };
     expect(isClickable(k)).toBe(true);
   });

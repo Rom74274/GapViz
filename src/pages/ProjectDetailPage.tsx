@@ -1,12 +1,15 @@
+import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowLeft, AlertCircle } from 'lucide-react';
 import { db } from '@/lib/db';
 import { RunClusteringButton } from '@/components/clustering/RunClusteringButton';
 import { GraphCanvas } from '@/components/graph/GraphCanvas';
+import { ClusterPanel } from '@/components/graph/ClusterPanel';
 
 export function ProjectDetailPage() {
   const { projectId } = useParams<{ projectId: string }>();
+  const [highlightedClusterId, setHighlightedClusterId] = useState<string | null>(null);
 
   const project = useLiveQuery(
     () => (projectId ? db.projects.get(projectId) : undefined),
@@ -63,7 +66,15 @@ export function ProjectDetailPage() {
       </header>
 
       <div className="relative flex-1 overflow-hidden">
-        <GraphCanvas projectId={projectId!} />
+        <GraphCanvas
+          projectId={projectId!}
+          highlightedClusterId={highlightedClusterId}
+        />
+        <ClusterPanel
+          projectId={projectId!}
+          highlightedClusterId={highlightedClusterId}
+          onHighlight={setHighlightedClusterId}
+        />
       </div>
     </div>
   );
