@@ -10,11 +10,16 @@ interface Props {
   visibleKws: KeywordNode[];
   projectName: string;
   filters: FilterState;
+  selectedIds?: Set<string>;
 }
 
-export function ExportButton({ visibleKws, projectName, filters }: Props) {
+export function ExportButton({ visibleKws, projectName, filters, selectedIds }: Props) {
   const [open, setOpen] = useState(false);
-  const disabled = visibleKws.length === 0;
+  const hasSelection = selectedIds && selectedIds.size > 0;
+  const exportKws = hasSelection
+    ? visibleKws.filter((k) => selectedIds!.has(k.id))
+    : visibleKws;
+  const disabled = exportKws.length === 0;
 
   return (
     <Popover
@@ -35,20 +40,29 @@ export function ExportButton({ visibleKws, projectName, filters }: Props) {
           )}
         >
           <Download size={12} />
-          Exporter
+          {hasSelection ? `Exporter (${selectedIds!.size})` : 'Exporter'}
           <ChevronDown size={11} className="opacity-60" />
         </button>
       }
     >
       <p className="mb-2 text-[11px] text-text-muted">
-        {visibleKws.length} mot{visibleKws.length > 1 ? 's' : ''}-clé{visibleKws.length > 1 ? 's' : ''} dans l'export
+        {hasSelection ? (
+          <>
+            <span className="text-accent">{exportKws.length} sélectionné{exportKws.length > 1 ? 's' : ''}</span>
+            {' '}dans l'export (ignorant les filtres)
+          </>
+        ) : (
+          <>
+            {exportKws.length} mot{exportKws.length > 1 ? 's' : ''}-clé{exportKws.length > 1 ? 's' : ''} filtré{exportKws.length > 1 ? 's' : ''}
+          </>
+        )}
       </p>
       <ul className="space-y-1">
         <li>
           <button
             type="button"
             onClick={() => {
-              exportKeywordsCSV(visibleKws, projectName, filters);
+              exportKeywordsCSV(exportKws, projectName, filters);
               setOpen(false);
             }}
             className="flex w-full items-start gap-2.5 rounded-md p-2 text-left hover:bg-bg-elevated"
@@ -66,7 +80,7 @@ export function ExportButton({ visibleKws, projectName, filters }: Props) {
           <button
             type="button"
             onClick={() => {
-              exportBatchContentPlan(visibleKws, projectName, filters);
+              exportBatchContentPlan(exportKws, projectName, filters);
               setOpen(false);
             }}
             className="flex w-full items-start gap-2.5 rounded-md p-2 text-left hover:bg-bg-elevated"

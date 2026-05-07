@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowLeft, AlertCircle, Network, Table2 } from 'lucide-react';
@@ -8,6 +8,7 @@ import { GraphCanvas, type GraphCanvasHandle } from '@/components/graph/GraphCan
 import { ClusterPanel } from '@/components/graph/ClusterPanel';
 import { ProjectStats } from '@/components/graph/ProjectStats';
 import { KeywordTable } from '@/components/graph/KeywordTable';
+import { KeywordDetailSidebar } from '@/components/graph/KeywordDetailSidebar';
 import { FilterBar } from '@/components/filters/FilterBar';
 import { useProjectGraph } from '@/lib/useProjectGraph';
 import { useProjectFilters } from '@/lib/filterStore';
@@ -19,6 +20,8 @@ export function ProjectDetailPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const [highlightedClusterId, setHighlightedClusterId] = useState<string | null>(null);
   const [view, setView] = useState<'graph' | 'table'>('graph');
+  const [selectedKwId, setSelectedKwId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const graphRef = useRef<GraphCanvasHandle>(null);
 
   const { graph, project } = useProjectGraph(projectId ?? '');
@@ -36,6 +39,17 @@ export function ProjectDetailPage() {
     const visible = all.filter((n) => isKeywordVisible(n, filters));
     return { allKws: all, visibleKws: visible };
   }, [graph, filters]);
+
+  const selectedNode = useMemo<KeywordNode | null>(() => {
+    if (!selectedKwId) return null;
+    return allKws.find((n) => n.id === selectedKwId) ?? null;
+  }, [selectedKwId, allKws]);
+
+  // Reset la sélection au changement de projet.
+  useEffect(() => {
+    setSelectedIds(new Set());
+    setSelectedKwId(null);
+  }, [projectId]);
 
   if (project === undefined) {
     return <div className="p-10 text-text-muted">Chargement…</div>;
@@ -91,6 +105,7 @@ export function ProjectDetailPage() {
         visibleKws={visibleKws}
         totalKwCount={allKws.length}
         onZoomToCluster={zoomToCluster}
+        selectedIds={selectedIds}
       />
 
       <div className="relative flex-1 overflow-hidden">
@@ -100,6 +115,8 @@ export function ProjectDetailPage() {
               ref={graphRef}
               projectId={projectId!}
               highlightedClusterId={highlightedClusterId}
+              selectedKeywordId={selectedKwId}
+              onSelectKeyword={setSelectedKwId}
             />
             <ClusterPanel
               projectId={projectId!}
@@ -109,7 +126,22 @@ export function ProjectDetailPage() {
             />
           </>
         ) : (
-          <KeywordTable visibleKws={visibleKws} totalKws={allKws} />
+          <KeywordTable
+            visibleKws={visibleKws}
+            totalKws={allKws}
+            selectedIds={selectedIds}
+            onSelectionChange={setSelectedIds}
+            onRowClick={(kwId) => {
+              setSelectedKwId(kwId);
+            }}
+          />
+        )}
+        {selectedNode && (
+          <KeywordDetailSidebar
+            node={selectedNode}
+            projectId={projectId!}
+            onClose={() => setSelectedKwId(null)}
+          />
         )}
       </div>
     </div>
@@ -156,3 +188,4 @@ function ViewToggle({
     </div>
   );
 }
+

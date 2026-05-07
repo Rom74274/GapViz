@@ -19,7 +19,6 @@ import {
   type KeywordNode,
 } from './graphLayout';
 import { GraphToolbar } from './GraphToolbar';
-import { KeywordDetailSidebar } from './KeywordDetailSidebar';
 import { SearchBar } from './SearchBar';
 import { useProjectFilters } from '@/lib/filterStore';
 import { computeNodeVisibility } from '@/lib/filterLogic';
@@ -28,6 +27,8 @@ interface Props {
   projectId: string;
   highlightedClusterId?: string | null;
   onCountsChange?: (visible: number, total: number) => void;
+  selectedKeywordId?: string | null;
+  onSelectKeyword?: (id: string | null) => void;
 }
 
 export interface GraphCanvasHandle {
@@ -68,7 +69,7 @@ const ABSENT_CLUSTER_COLOR = '#f59e0b';
 const OPACITY_LERP = 0.18;
 
 export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCanvas(
-  { projectId, highlightedClusterId, onCountsChange },
+  { projectId, highlightedClusterId, onCountsChange, selectedKeywordId, onSelectKeyword },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -85,10 +86,12 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
 
   const [size, setSize] = useState({ width: 800, height: 600 });
   const [hover, setHover] = useState<HoverState | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showLabels, setShowLabels] = useState(true);
   const [showGlow, setShowGlow] = useState(true);
   const [searchMatchIds, setSearchMatchIds] = useState<Set<string> | null>(null);
+
+  const selectedId = selectedKeywordId ?? null;
+  const setSelectedId = (id: string | null) => onSelectKeyword?.(id);
 
   const filters = useProjectFilters(projectId);
 
@@ -142,12 +145,6 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
   useEffect(() => {
     onCountsChange?.(visibility.visibleKwCount, visibility.totalKwCount);
   }, [visibility.visibleKwCount, visibility.totalKwCount, onCountsChange]);
-
-  const selectedNode = useMemo<KeywordNode | null>(() => {
-    if (!selectedId || !graph) return null;
-    const n = graph.nodes.find((nd) => nd.id === selectedId);
-    return n && n.kind === 'keyword' ? n : null;
-  }, [selectedId, graph]);
 
   // ---------------------------------------------------------------- imperative handle
   useImperativeHandle(ref, () => ({
@@ -240,7 +237,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
 
     drawClusterAndCenterLabels(ctx, graph.nodes, t.k, fade, opMap);
     if (showLabels) {
-      drawKeywordLabels(ctx, graph.nodes, t.k, fade, opMap);
+      drawKeywordLabels(ctx, graph.nodes, t, fade, opMap);
     }
 
     ctx.restore();
@@ -605,13 +602,6 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
         showGlow={showGlow}
         onToggleGlow={() => setShowGlow((v) => !v)}
       />
-      {selectedNode && (
-        <KeywordDetailSidebar
-          node={selectedNode}
-          projectId={projectId}
-          onClose={() => setSelectedId(null)}
-        />
-      )}
       {isLoading && (
         <Overlay>
           <p className="text-sm text-text-muted">Chargement…</p>
@@ -879,25 +869,11 @@ function drawKeyword(
   const baseAlpha = getDepthOpacity(n.radius) * s.fade * dim * op * searchDim(s, n.id);
   const r = n.radius * (s.breathing - 0.005);
   ctx.globalAlpha = baseAlpha;
-  if (n.sources.length === 1) {
-    ctx.beginPath();
-    ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-    ctx.fillStyle = n.sources[0]!.color;
-    ctx.fill();
-  } else if (n.sources.length > 1) {
-    const slice = (Math.PI * 2) / n.sources.length;
-    for (let i = 0; i < n.sources.length; i++) {
-      const start = i * slice - Math.PI / 2;
-      ctx.beginPath();
-      ctx.moveTo(n.x, n.y);
-      ctx.arc(n.x, n.y, r, start, start + slice);
-      ctx.closePath();
-      ctx.fillStyle = n.sources[i]!.color;
-      ctx.fill();
-    }
-  }
   ctx.beginPath();
   ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+  ctx.fillStyle = n.primaryColor;
+  ctx.fill();
+  // Bordure subtile.
   ctx.strokeStyle = `rgba(10, 10, 26, ${0.5 * baseAlpha})`;
   ctx.lineWidth = 0.8;
   ctx.stroke();
@@ -1014,22 +990,78 @@ function drawClusterAndCenterLabels(
 function drawKeywordLabels(
   ctx: CanvasRenderingContext2D,
   nodes: GraphNode[],
-  zoomK: number,
+  transform: d3.ZoomTransform,
   fade: number,
   opacityMap: Map<string, NodeOpacity>,
 ): void {
-  const labelOpacity = clamp((zoomK - 1.2) / 0.6, 0, 1);
-  if (labelOpacity <= 0) return;
-  ctx.font = `500 ${10 / Math.max(0.6, zoomK / 1.5)}px "JetBrains Mono", ui-monospace, monospace`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
+  const zoomK = transform.k;
+  // Apparition progressive : pas de label sous 0.9×, fade-in 0.9→1.4.
+  const baseOpacity = clamp((zoomK - 0.9) / 0.5, 0, 1);
+  if (baseOpacity <= 0) return;
+
+  // Top N par cluster, agrandi avec le zoom.
+  const topN = zoomK < 1.5 ? 3 : zoomK < 2 ? 5 : zoomK < 3 ? 10 : Number.POSITIVE_INFINITY;
+
+  const byCluster = new Map<string, KeywordNode[]>();
   for (const n of nodes) {
     if (n.kind !== 'keyword') continue;
+    const list = byCluster.get(n.clusterId) ?? [];
+    list.push(n);
+    byCluster.set(n.clusterId, list);
+  }
+
+  const candidates: KeywordNode[] = [];
+  for (const list of byCluster.values()) {
+    list.sort((a, b) => b.volume - a.volume);
+    for (const n of list.slice(0, topN === Number.POSITIVE_INFINITY ? list.length : topN)) {
+      candidates.push(n);
+    }
+  }
+  // Tri global par volume desc → priorité de placement en cas de collision.
+  candidates.sort((a, b) => b.volume - a.volume);
+
+  const fontInWorld = 10 / Math.max(0.6, zoomK / 1.5);
+  const fontInScreen = fontInWorld * zoomK;
+
+  // Bboxes en coords écran.
+  const placed: Array<{ x1: number; y1: number; x2: number; y2: number }> = [];
+  const keep: KeywordNode[] = [];
+
+  for (const n of candidates) {
     if (n.x === undefined || n.y === undefined) continue;
     const op = getOp(opacityMap, n.id);
     if (op < 0.1) continue;
-    if (n.radius < 5 && zoomK < 2.2) continue;
-    ctx.fillStyle = `rgba(230, 230, 240, ${0.55 * labelOpacity * fade * op})`;
+
+    const screenX = n.x * zoomK + transform.x;
+    const screenY = (n.y + n.radius + 4) * zoomK + transform.y;
+    const halfW = n.keyword.length * fontInScreen * 0.31;
+    const halfH = fontInScreen * 0.55;
+    const bbox = {
+      x1: screenX - halfW,
+      y1: screenY,
+      x2: screenX + halfW,
+      y2: screenY + halfH * 1.5,
+    };
+
+    let overlaps = false;
+    for (const b of placed) {
+      if (bbox.x1 < b.x2 && bbox.x2 > b.x1 && bbox.y1 < b.y2 && bbox.y2 > b.y1) {
+        overlaps = true;
+        break;
+      }
+    }
+    if (overlaps) continue;
+    placed.push(bbox);
+    keep.push(n);
+  }
+
+  ctx.font = `500 ${fontInWorld}px "JetBrains Mono", ui-monospace, monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  for (const n of keep) {
+    if (n.x === undefined || n.y === undefined) continue;
+    const op = getOp(opacityMap, n.id);
+    ctx.fillStyle = `rgba(230, 230, 240, ${0.55 * baseOpacity * fade * op})`;
     ctx.fillText(n.keyword, n.x, n.y + n.radius + 4);
   }
 }

@@ -32,6 +32,7 @@ interface Props {
   visibleKws: KeywordNode[];
   totalKwCount: number;
   onZoomToCluster?: (clusterId: string) => void;
+  selectedIds?: Set<string>;
 }
 
 const INTENT_OPTIONS: { value: Intent; label: string; color: string }[] = [
@@ -41,7 +42,14 @@ const INTENT_OPTIONS: { value: Intent; label: string; color: string }[] = [
   { value: 'navigational', label: 'Navigational', color: '#f59e0b' },
 ];
 
-export function FilterBar({ projectId, projectName, visibleKws, totalKwCount, onZoomToCluster }: Props) {
+export function FilterBar({
+  projectId,
+  projectName,
+  visibleKws,
+  totalKwCount,
+  onZoomToCluster,
+  selectedIds,
+}: Props) {
   const visibleKwCount = visibleKws.length;
   const filters = useProjectFilters(projectId);
   const patch = useFilterStore((s) => s.patch);
@@ -68,7 +76,7 @@ export function FilterBar({ projectId, projectName, visibleKws, totalKwCount, on
   const active = isAnyFilterActive(filters);
 
   return (
-    <div className="border-b border-border-subtle bg-bg-surface/60 px-3 py-2 backdrop-blur">
+    <div className="relative z-20 border-b border-border-subtle bg-bg-surface/60 px-3 py-2 backdrop-blur">
       <div className="flex flex-wrap items-center gap-1.5">
         <ConcurrentFilter
           allDomains={allDomains}
@@ -137,6 +145,7 @@ export function FilterBar({ projectId, projectName, visibleKws, totalKwCount, on
             visibleKws={visibleKws}
             projectName={projectName}
             filters={filters}
+            selectedIds={selectedIds}
           />
         </div>
       </div>

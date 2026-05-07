@@ -1,8 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { X, ExternalLink, Layers } from 'lucide-react';
-import type { KeywordNode } from './graphLayout';
+import { X, ExternalLink, Layers, Check, AlertTriangle } from 'lucide-react';
+import type { KeywordNode, NodeSource } from './graphLayout';
 import { db } from '@/lib/db';
+import { cn } from '@/lib/utils';
 
 interface Props {
   node: KeywordNode;
@@ -11,7 +12,6 @@ interface Props {
 }
 
 export function KeywordDetailSidebar({ node, projectId, onClose }: Props) {
-  // Esc pour fermer.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -39,10 +39,32 @@ export function KeywordDetailSidebar({ node, projectId, onClose }: Props) {
     return out.sort((a, b) => b.volume - a.volume).slice(0, 8);
   }, [node.id, node.clusterId, projectId]);
 
+  // Sort sources by position asc (better-positioned first), null at the end.
+  const sortedSources = useMemo(() => {
+    return [...node.sources].sort((a, b) => {
+      const pa = a.position ?? 999;
+      const pb = b.position ?? 999;
+      if (pa !== pb) return pa - pb;
+      return (a.isMe === b.isMe ? 0 : a.isMe ? -1 : 1);
+    });
+  }, [node.sources]);
+
+  const me = node.sources.find((s) => s.isMe);
+  const competitors = node.sources.filter((s) => !s.isMe);
+
+  // Mon site est mieux/moins bien positionné que tel concurrent ?
+  const myPosition = me?.position ?? null;
+  const betterCompetitors = useMemo(() => {
+    if (myPosition === null) return [];
+    return competitors.filter(
+      (c) => c.position !== null && c.position < myPosition,
+    );
+  }, [competitors, myPosition]);
+
   const serpUrl = `https://www.google.fr/search?q=${encodeURIComponent(node.keyword)}`;
 
   return (
-    <aside className="absolute right-0 top-0 z-20 flex h-full w-[360px] flex-col border-l border-border-subtle bg-bg-surface shadow-2xl">
+    <aside className="absolute right-0 top-0 z-30 flex h-full w-[360px] flex-col border-l border-border-subtle bg-bg-surface shadow-2xl">
       <header className="flex items-start justify-between gap-3 border-b border-border-subtle p-4">
         <div className="min-w-0">
           <h2 className="truncate text-base font-semibold">{node.keyword}</h2>
@@ -89,51 +111,36 @@ export function KeywordDetailSidebar({ node, projectId, onClose }: Props) {
               Opportunité — tu n'es pas positionné sur ce mot-clé
             </div>
           )}
+          {!node.isGap && competitors.length === 0 && (
+            <div className="mt-3 flex items-center gap-2 rounded-md bg-green-500/10 px-3 py-2 text-xs text-green-400">
+              <Check size={12} />
+              Aucun concurrent positionné — tu domines ce mot-clé.
+            </div>
+          )}
+          {!node.isGap && betterCompetitors.length > 0 && (
+            <div className="mt-3 flex items-start gap-2 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+              <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+              <span>
+                Tu es pos {myPosition}, mais{' '}
+                {betterCompetitors
+                  .map((c) => `${c.label} pos ${c.position}`)
+                  .join(', ')}{' '}
+                te dépasse{betterCompetitors.length > 1 ? 'nt' : ''} sur ce KW.
+              </span>
+            </div>
+          )}
         </section>
 
         <section className="border-b border-border-subtle p-4">
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-muted">
-            Acteurs positionnés
+          <h3 className="mb-2 flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-text-muted">
+            <span>Acteurs positionnés</span>
+            <span className="font-mono text-text-muted">
+              {node.sources.length}
+            </span>
           </h3>
-          <ul className="space-y-2">
-            {node.sources.map((s) => (
-              <li
-                key={s.domain}
-                className="flex items-center justify-between gap-2 rounded-md bg-bg-base px-3 py-2"
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <span
-                    className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: s.color }}
-                  />
-                  <div className="min-w-0">
-                    <span className={s.isMe ? 'text-sm font-semibold' : 'text-sm'}>
-                      {s.label}
-                    </span>
-                    <p className="truncate font-mono text-[10px] text-text-muted">
-                      {s.domain}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  {s.position !== null && (
-                    <span className="font-mono text-xs text-text-secondary">
-                      pos {s.position}
-                    </span>
-                  )}
-                  {s.url && (
-                    <a
-                      href={s.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="rounded p-1 text-text-muted hover:bg-bg-elevated hover:text-text-primary"
-                      aria-label="Voir l'URL"
-                    >
-                      <ExternalLink size={12} />
-                    </a>
-                  )}
-                </div>
-              </li>
+          <ul className="space-y-1.5">
+            {sortedSources.map((s) => (
+              <SourceRow key={s.domain} source={s} myPosition={myPosition} />
             ))}
           </ul>
         </section>
@@ -172,6 +179,83 @@ export function KeywordDetailSidebar({ node, projectId, onClose }: Props) {
         </section>
       </div>
     </aside>
+  );
+}
+
+function SourceRow({
+  source,
+  myPosition,
+}: {
+  source: NodeSource;
+  myPosition: number | null;
+}) {
+  const beatsMe =
+    !source.isMe &&
+    myPosition !== null &&
+    source.position !== null &&
+    source.position < myPosition;
+
+  return (
+    <li
+      className={cn(
+        'flex items-center justify-between gap-2 rounded-md px-3 py-2',
+        source.isMe
+          ? 'bg-accent/10 border border-accent/30'
+          : beatsMe
+            ? 'bg-amber-500/5 border border-amber-500/20'
+            : 'bg-bg-base',
+      )}
+    >
+      <div className="flex min-w-0 items-center gap-2">
+        <span
+          className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+          style={{ backgroundColor: source.color }}
+        />
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span
+              className={cn('text-sm', source.isMe && 'font-semibold text-text-primary')}
+            >
+              {source.label}
+            </span>
+            {source.isMe && (
+              <span className="rounded-full bg-accent/20 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-accent">
+                Vous
+              </span>
+            )}
+          </div>
+          <p className="truncate font-mono text-[10px] text-text-muted">{source.domain}</p>
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        {source.position !== null && (
+          <span
+            className={cn(
+              'font-mono text-xs',
+              source.isMe
+                ? 'text-text-primary font-semibold'
+                : beatsMe
+                  ? 'text-amber-300'
+                  : 'text-text-secondary',
+            )}
+          >
+            pos {source.position}
+          </span>
+        )}
+        {source.url && (
+          <a
+            href={source.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded p-1 text-text-muted hover:bg-bg-elevated hover:text-text-primary"
+            aria-label="Voir l'URL"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <ExternalLink size={12} />
+          </a>
+        )}
+      </div>
+    </li>
   );
 }
 

@@ -158,7 +158,7 @@ export function buildGraph({
     const clusterName =
       clusterById.get(first.clusterId ?? '')?.name ?? UNCLUSTERED_NAME;
     const isGap = !sources.some((s) => s.isMe);
-    const primaryColor = sources[0]?.color ?? '#6a6a8a';
+    const primaryColor = pickPrimaryColor(sources);
 
     const node: KeywordNode = {
       id: `${KEYWORD_PREFIX}${first.keyword.trim().toLowerCase()}`,
@@ -339,6 +339,17 @@ function buildInterClusterLinks(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function pickPrimaryColor(sources: NodeSource[]): string {
+  if (sources.length === 0) return '#6a6a8a';
+  const me = sources.find((s) => s.isMe);
+  if (me) return me.color;
+  const ranked = sources
+    .filter((s) => s.position !== null)
+    .sort((a, b) => (a.position ?? 999) - (b.position ?? 999));
+  if (ranked.length > 0) return ranked[0]!.color;
+  return sources[0]!.color;
+}
 
 function mergeSources(
   group: Keyword[],
