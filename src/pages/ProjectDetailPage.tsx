@@ -1,15 +1,18 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowLeft, AlertCircle } from 'lucide-react';
 import { db } from '@/lib/db';
 import { RunClusteringButton } from '@/components/clustering/RunClusteringButton';
-import { GraphCanvas } from '@/components/graph/GraphCanvas';
+import { GraphCanvas, type GraphCanvasHandle } from '@/components/graph/GraphCanvas';
 import { ClusterPanel } from '@/components/graph/ClusterPanel';
+import { FilterBar } from '@/components/filters/FilterBar';
 
 export function ProjectDetailPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const [highlightedClusterId, setHighlightedClusterId] = useState<string | null>(null);
+  const [counts, setCounts] = useState({ visible: 0, total: 0 });
+  const graphRef = useRef<GraphCanvasHandle>(null);
 
   const project = useLiveQuery(
     () => (projectId ? db.projects.get(projectId) : undefined),
@@ -17,10 +20,6 @@ export function ProjectDetailPage() {
   );
   const competitorCount = useLiveQuery(
     () => (projectId ? db.competitors.where('projectId').equals(projectId).count() : 0),
-    [projectId],
-  );
-  const keywordCount = useLiveQuery(
-    () => (projectId ? db.keywords.where('projectId').equals(projectId).count() : 0),
     [projectId],
   );
 
@@ -43,6 +42,8 @@ export function ProjectDetailPage() {
     );
   }
 
+  const zoomToCluster = (id: string) => graphRef.current?.zoomToCluster(id);
+
   return (
     <div className="flex h-full flex-col">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border-subtle bg-bg-surface/60 px-5 py-2.5 backdrop-blur">
@@ -59,7 +60,7 @@ export function ProjectDetailPage() {
             {project.myDomain} · {project.country}
           </span>
           <span className="font-mono text-xs text-text-muted">
-            · {keywordCount ?? '…'} KWs · {competitorCount ?? '…'} sites
+            · {counts.total} KWs · {competitorCount ?? '…'} sites
           </span>
         </div>
         <RunClusteringButton projectId={projectId!} variant="compact" />
@@ -67,13 +68,22 @@ export function ProjectDetailPage() {
 
       <div className="relative flex-1 overflow-hidden">
         <GraphCanvas
+          ref={graphRef}
           projectId={projectId!}
           highlightedClusterId={highlightedClusterId}
+          onCountsChange={(visible, total) => setCounts({ visible, total })}
+        />
+        <FilterBar
+          projectId={projectId!}
+          visibleKwCount={counts.visible}
+          totalKwCount={counts.total}
+          onZoomToCluster={zoomToCluster}
         />
         <ClusterPanel
           projectId={projectId!}
           highlightedClusterId={highlightedClusterId}
           onHighlight={setHighlightedClusterId}
+          onZoomToCluster={zoomToCluster}
         />
       </div>
     </div>

@@ -8,6 +8,7 @@ interface Props {
   projectId: string;
   highlightedClusterId: string | null;
   onHighlight: (clusterId: string | null) => void;
+  onZoomToCluster?: (clusterId: string) => void;
 }
 
 interface ClusterStat {
@@ -20,7 +21,7 @@ interface ClusterStat {
   isMyCovered: boolean;
 }
 
-export function ClusterPanel({ projectId, highlightedClusterId, onHighlight }: Props) {
+export function ClusterPanel({ projectId, highlightedClusterId, onHighlight, onZoomToCluster }: Props) {
   const [open, setOpen] = useState(true);
 
   const stats = useLiveQuery(async (): Promise<ClusterStat[]> => {
@@ -112,7 +113,14 @@ export function ClusterPanel({ projectId, highlightedClusterId, onHighlight }: P
               <li key={c.id}>
                 <button
                   type="button"
-                  onClick={() => onHighlight(highlighted ? null : c.id)}
+                  onClick={() => {
+                    if (highlighted) {
+                      onHighlight(null);
+                    } else {
+                      onHighlight(c.id);
+                      onZoomToCluster?.(c.id);
+                    }
+                  }}
                   className={cn(
                     'flex w-full items-start justify-between gap-2 border-b border-border-subtle/60 px-3 py-2 text-left transition-colors hover:bg-bg-elevated',
                     highlighted && 'bg-bg-elevated',

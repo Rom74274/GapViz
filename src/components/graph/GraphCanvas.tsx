@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import * as d3 from 'd3';
 import { db } from '@/lib/db';
@@ -13,10 +20,18 @@ import {
 } from './graphLayout';
 import { GraphToolbar } from './GraphToolbar';
 import { KeywordDetailSidebar } from './KeywordDetailSidebar';
+import { useProjectFilters } from '@/lib/filterStore';
+import { computeNodeVisibility } from '@/lib/filterLogic';
 
 interface Props {
   projectId: string;
   highlightedClusterId?: string | null;
+  onCountsChange?: (visible: number, total: number) => void;
+}
+
+export interface GraphCanvasHandle {
+  zoomToCluster: (clusterId: string) => void;
+  resetZoom: () => void;
 }
 
 interface HoverState {
@@ -27,15 +42,24 @@ interface HoverState {
 
 interface Particle {
   linkIdx: number;
-  t: number; // 0 → 1
-  speed: number; // par ms
+  t: number;
+  speed: number;
   size: number;
+}
+
+interface NodeOpacity {
+  current: number;
+  target: number;
 }
 
 const FADE_IN_MS = 1200;
 const ABSENT_CLUSTER_COLOR = '#f59e0b';
+const OPACITY_LERP = 0.18;
 
-export function GraphCanvas({ projectId, highlightedClusterId }: Props) {
+export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCanvas(
+  { projectId, highlightedClusterId, onCountsChange },
+  ref,
+) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const transformRef = useRef<d3.ZoomTransform>(d3.zoomIdentity);
@@ -44,13 +68,15 @@ export function GraphCanvas({ projectId, highlightedClusterId }: Props) {
   const quadtreeRef = useRef<d3.Quadtree<GraphNode> | null>(null);
   const fadeStartRef = useRef<number>(performance.now());
   const particlesRef = useRef<Particle[]>([]);
-  const rafRef = useRef<number | null>(null);
+  const opacityMapRef = useRef<Map<string, NodeOpacity>>(new Map());
 
   const [size, setSize] = useState({ width: 800, height: 600 });
   const [hover, setHover] = useState<HoverState | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showLabels, setShowLabels] = useState(true);
   const [showGlow, setShowGlow] = useState(true);
+
+  const filters = useProjectFilters(projectId);
 
   const project = useLiveQuery(() => db.projects.get(projectId), [projectId]);
   const keywords = useLiveQuery(
@@ -77,11 +103,57 @@ export function GraphCanvas({ projectId, highlightedClusterId }: Props) {
     });
   }, [keywords, competitors, clusters, project]);
 
+  // Compute visibility (changes with filters or graph).
+  const visibility = useMemo(() => {
+    if (!graph) return { visible: new Set<string>(), visibleKwCount: 0, totalKwCount: 0 };
+    return computeNodeVisibility(graph.nodes, filters);
+  }, [graph, filters]);
+
+  // Update opacity targets when visibility changes.
+  useEffect(() => {
+    if (!graph) return;
+    const map = opacityMapRef.current;
+    for (const n of graph.nodes) {
+      if (!map.has(n.id)) map.set(n.id, { current: 1, target: 1 });
+      const info = map.get(n.id)!;
+      info.target = visibility.visible.has(n.id) ? 1 : 0;
+    }
+    // Cleanup orphans (KWs supprimés).
+    for (const id of map.keys()) {
+      if (!graph.nodes.find((n) => n.id === id)) map.delete(id);
+    }
+  }, [graph, visibility]);
+
+  // Expose counts to parent.
+  useEffect(() => {
+    onCountsChange?.(visibility.visibleKwCount, visibility.totalKwCount);
+  }, [visibility.visibleKwCount, visibility.totalKwCount, onCountsChange]);
+
   const selectedNode = useMemo<KeywordNode | null>(() => {
     if (!selectedId || !graph) return null;
     const n = graph.nodes.find((nd) => nd.id === selectedId);
     return n && n.kind === 'keyword' ? n : null;
   }, [selectedId, graph]);
+
+  // ---------------------------------------------------------------- imperative handle
+  useImperativeHandle(ref, () => ({
+    zoomToCluster: (clusterId: string) => {
+      if (!graph || !canvasRef.current || !zoomRef.current) return;
+      const meta = graph.nodes.find(
+        (n): n is ClusterMetaNode => n.kind === 'cluster' && n.clusterId === clusterId,
+      );
+      if (!meta || meta.x === undefined || meta.y === undefined) return;
+      const scale = 2;
+      const t = d3.zoomIdentity
+        .translate(size.width / 2 - meta.x * scale, size.height / 2 - meta.y * scale)
+        .scale(scale);
+      d3.select(canvasRef.current).transition().duration(500).call(zoomRef.current.transform, t);
+    },
+    resetZoom: () => {
+      if (!canvasRef.current || !zoomRef.current) return;
+      d3.select(canvasRef.current).transition().duration(280).call(zoomRef.current.transform, d3.zoomIdentity);
+    },
+  }), [graph, size.width, size.height]);
 
   // ---------------------------------------------------------------- resize
   useEffect(() => {
@@ -124,12 +196,18 @@ export function GraphCanvas({ projectId, highlightedClusterId }: Props) {
       return;
     }
 
+    // Lerp opacities.
+    const opMap = opacityMapRef.current;
+    for (const info of opMap.values()) {
+      info.current += (info.target - info.current) * OPACITY_LERP;
+    }
+
     const t = transformRef.current;
     ctx.translate(t.x, t.y);
     ctx.scale(t.k, t.k);
 
-    drawLinks(ctx, graph.links, fade, t.k, highlightedClusterId);
-    drawParticles(ctx, particlesRef.current, graph.links, fade);
+    drawLinks(ctx, graph.links, fade, t.k, highlightedClusterId, opMap);
+    drawParticles(ctx, particlesRef.current, graph.links, fade, opMap);
     drawNodesAndHalos(ctx, graph.nodes, {
       fade,
       breathing,
@@ -138,43 +216,43 @@ export function GraphCanvas({ projectId, highlightedClusterId }: Props) {
       selectedId,
       highlightedClusterId,
       zoomK: t.k,
+      opacities: opMap,
     });
 
-    drawClusterAndCenterLabels(ctx, graph.nodes, t.k, fade);
+    drawClusterAndCenterLabels(ctx, graph.nodes, t.k, fade, opMap);
     if (showLabels) {
-      drawKeywordLabels(ctx, graph.nodes, t.k, fade);
+      drawKeywordLabels(ctx, graph.nodes, t.k, fade, opMap);
     }
 
     ctx.restore();
   };
 
-  // ---------------------------------------------------------------- continuous RAF render loop
+  // ---------------------------------------------------------------- continuous RAF
   useEffect(() => {
     let cancelled = false;
+    let rafId: number | null = null;
     const loop = () => {
       if (cancelled) return;
       renderRef.current();
-      rafRef.current = requestAnimationFrame(loop);
+      rafId = requestAnimationFrame(loop);
     };
-    rafRef.current = requestAnimationFrame(loop);
+    rafId = requestAnimationFrame(loop);
     return () => {
       cancelled = true;
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      if (rafId !== null) cancelAnimationFrame(rafId);
     };
   }, []);
 
-  // ---------------------------------------------------------------- simulation + particles
+  // ---------------------------------------------------------------- simulation
   useEffect(() => {
     if (!graph || size.width === 0) return;
 
     fadeStartRef.current = performance.now();
     placeInitialPositions(graph.nodes, size.width, size.height);
 
-    // (re)génère les particules pour les liens center-cluster.
     particlesRef.current = [];
     graph.links.forEach((l, idx) => {
       if (l.kind !== 'center-cluster') return;
-      // 2 particules par lien, désynchronisées.
       particlesRef.current.push({ linkIdx: idx, t: Math.random(), speed: 0.00015, size: 1.6 });
       particlesRef.current.push({ linkIdx: idx, t: Math.random(), speed: 0.00012, size: 1.2 });
     });
@@ -234,7 +312,7 @@ export function GraphCanvas({ projectId, highlightedClusterId }: Props) {
     };
   }, [graph, size.width, size.height]);
 
-  // ---------------------------------------------------------------- particle update loop
+  // ---------------------------------------------------------------- particles loop
   useEffect(() => {
     let cancelled = false;
     let last = performance.now();
@@ -283,6 +361,8 @@ export function GraphCanvas({ projectId, highlightedClusterId }: Props) {
       if (!tree) return null;
       const found = tree.find(x, y, 60);
       if (!found || found.x === undefined || found.y === undefined) return null;
+      const op = opacityMapRef.current.get(found.id);
+      if (op && op.current < 0.2) return null;
       const dx = x - found.x;
       const dy = y - found.y;
       if (dx * dx + dy * dy > found.radius * found.radius) return null;
@@ -346,9 +426,7 @@ export function GraphCanvas({ projectId, highlightedClusterId }: Props) {
     <div
       ref={containerRef}
       className="relative h-full w-full overflow-hidden"
-      style={{
-        background: 'radial-gradient(ellipse at center, #0f0f2e 0%, #0a0a1a 70%)',
-      }}
+      style={{ background: 'radial-gradient(ellipse at center, #0f0f2e 0%, #0a0a1a 70%)' }}
     >
       <DotGrid />
       <canvas ref={canvasRef} className="block" style={{ cursor: 'grab' }} />
@@ -387,7 +465,7 @@ export function GraphCanvas({ projectId, highlightedClusterId }: Props) {
       )}
     </div>
   );
-}
+});
 
 function Overlay({ children }: { children: React.ReactNode }) {
   return (
@@ -437,17 +515,25 @@ function placeInitialPositions(nodes: GraphNode[], width: number, height: number
 // Drawing
 // ============================================================================
 
+function getOp(map: Map<string, NodeOpacity>, id: string): number {
+  return map.get(id)?.current ?? 1;
+}
+
 function drawLinks(
   ctx: CanvasRenderingContext2D,
   links: GraphLink[],
   fade: number,
   zoomK: number,
   highlightedClusterId: string | null | undefined,
+  opacityMap: Map<string, NodeOpacity>,
 ): void {
   for (const l of links) {
     const s = l.source as GraphNode;
     const t = l.target as GraphNode;
     if (s.x === undefined || s.y === undefined || t.x === undefined || t.y === undefined) continue;
+
+    const linkOp = Math.min(getOp(opacityMap, s.id), getOp(opacityMap, t.id));
+    if (linkOp < 0.02) continue;
 
     const involvesHighlight =
       highlightedClusterId &&
@@ -473,14 +559,14 @@ function drawLinks(
       lineWidth = 0.6;
     }
 
-    // Gradient src color → blanc/transparent.
+    const finalAlpha = baseOpacity * fade * dim * linkOp;
     try {
       const grad = ctx.createLinearGradient(s.x, s.y, t.x, t.y);
-      grad.addColorStop(0, withAlpha(l.color, baseOpacity * fade * dim));
-      grad.addColorStop(1, withAlpha('#ffffff', baseOpacity * 0.35 * fade * dim));
+      grad.addColorStop(0, withAlpha(l.color, finalAlpha));
+      grad.addColorStop(1, withAlpha('#ffffff', finalAlpha * 0.35));
       ctx.strokeStyle = grad;
     } catch {
-      ctx.strokeStyle = withAlpha(l.color, baseOpacity * fade * dim);
+      ctx.strokeStyle = withAlpha(l.color, finalAlpha);
     }
     ctx.lineWidth = lineWidth / Math.max(0.5, zoomK / 1.5);
     if (l.kind === 'cluster-cluster') ctx.setLineDash([4, 6]);
@@ -497,6 +583,7 @@ function drawParticles(
   particles: Particle[],
   links: GraphLink[],
   fade: number,
+  opacityMap: Map<string, NodeOpacity>,
 ): void {
   for (const p of particles) {
     const link = links[p.linkIdx];
@@ -504,10 +591,12 @@ function drawParticles(
     const s = link.source as GraphNode;
     const t = link.target as GraphNode;
     if (s.x === undefined || s.y === undefined || t.x === undefined || t.y === undefined) continue;
+    const linkOp = Math.min(getOp(opacityMap, s.id), getOp(opacityMap, t.id));
+    if (linkOp < 0.1) continue;
     const x = s.x + (t.x - s.x) * p.t;
     const y = s.y + (t.y - s.y) * p.t;
     const grad = ctx.createRadialGradient(x, y, 0, x, y, p.size * 4);
-    grad.addColorStop(0, `rgba(255, 255, 255, ${0.55 * fade})`);
+    grad.addColorStop(0, `rgba(255, 255, 255, ${0.55 * fade * linkOp})`);
     grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
     ctx.fillStyle = grad;
     ctx.beginPath();
@@ -524,6 +613,7 @@ interface NodeRenderState {
   selectedId: string | null;
   highlightedClusterId: string | null | undefined;
   zoomK: number;
+  opacities: Map<string, NodeOpacity>;
 }
 
 function drawNodesAndHalos(
@@ -531,29 +621,29 @@ function drawNodesAndHalos(
   nodes: GraphNode[],
   s: NodeRenderState,
 ): void {
-  // Pass 1 — gap glow (sous le node).
   if (s.showGlow) {
     for (const n of nodes) {
       if (n.kind !== 'keyword' || !n.isGap) continue;
-      drawGapGlow(ctx, n, s.fade);
+      const op = getOp(s.opacities, n.id);
+      if (op < 0.05) continue;
+      drawGapGlow(ctx, n, s.fade * op);
     }
   }
-  // Pass 2 — ambient halo (tous les nodes).
-  for (const n of nodes) drawAmbientHalo(ctx, n, s.fade);
+  for (const n of nodes) {
+    const op = getOp(s.opacities, n.id);
+    if (op < 0.05) continue;
+    drawAmbientHalo(ctx, n, s.fade * op);
+  }
 
-  // Pass 3 — keywords.
   for (const n of nodes) {
     if (n.kind === 'keyword') drawKeyword(ctx, n, s);
   }
-  // Pass 4 — cluster meta.
   for (const n of nodes) {
     if (n.kind === 'cluster') drawCluster(ctx, n, s);
   }
-  // Pass 5 — center.
   for (const n of nodes) {
     if (n.kind === 'center') drawCenter(ctx, n, s);
   }
-  // Pass 6 — outlines hover/selection.
   for (const n of nodes) {
     if (n.x === undefined || n.y === undefined) continue;
     if (n.id === s.selectedId) drawOutline(ctx, n, '#e6e6f0', 2);
@@ -566,7 +656,7 @@ function getDepthOpacity(radius: number): number {
   return 0.45 + 0.55 * t;
 }
 
-function drawAmbientHalo(ctx: CanvasRenderingContext2D, n: GraphNode, fade: number): void {
+function drawAmbientHalo(ctx: CanvasRenderingContext2D, n: GraphNode, alpha: number): void {
   if (n.x === undefined || n.y === undefined) return;
   const color =
     n.kind === 'keyword'
@@ -577,7 +667,7 @@ function drawAmbientHalo(ctx: CanvasRenderingContext2D, n: GraphNode, fade: numb
   const inner = n.radius;
   const outer = n.radius + 4;
   const grad = ctx.createRadialGradient(n.x, n.y, inner, n.x, n.y, outer);
-  grad.addColorStop(0, withAlpha(color, 0.14 * fade));
+  grad.addColorStop(0, withAlpha(color, 0.14 * alpha));
   grad.addColorStop(1, withAlpha(color, 0));
   ctx.fillStyle = grad;
   ctx.beginPath();
@@ -585,13 +675,13 @@ function drawAmbientHalo(ctx: CanvasRenderingContext2D, n: GraphNode, fade: numb
   ctx.fill();
 }
 
-function drawGapGlow(ctx: CanvasRenderingContext2D, n: KeywordNode, fade: number): void {
+function drawGapGlow(ctx: CanvasRenderingContext2D, n: KeywordNode, alpha: number): void {
   if (n.x === undefined || n.y === undefined) return;
   const inner = n.radius;
   const outer = n.radius * 2.6 + 2;
   const grad = ctx.createRadialGradient(n.x, n.y, inner, n.x, n.y, outer);
-  grad.addColorStop(0, withAlpha(n.primaryColor, 0.55 * fade));
-  grad.addColorStop(0.6, withAlpha(n.primaryColor, 0.18 * fade));
+  grad.addColorStop(0, withAlpha(n.primaryColor, 0.55 * alpha));
+  grad.addColorStop(0.6, withAlpha(n.primaryColor, 0.18 * alpha));
   grad.addColorStop(1, withAlpha(n.primaryColor, 0));
   ctx.fillStyle = grad;
   ctx.beginPath();
@@ -605,9 +695,10 @@ function drawKeyword(
   s: NodeRenderState,
 ): void {
   if (n.x === undefined || n.y === undefined) return;
-  const dim =
-    s.highlightedClusterId && n.clusterId !== s.highlightedClusterId ? 0.3 : 1;
-  const baseAlpha = getDepthOpacity(n.radius) * s.fade * dim;
+  const op = getOp(s.opacities, n.id);
+  if (op < 0.05) return;
+  const dim = s.highlightedClusterId && n.clusterId !== s.highlightedClusterId ? 0.3 : 1;
+  const baseAlpha = getDepthOpacity(n.radius) * s.fade * dim * op;
   const r = n.radius * (s.breathing - 0.005);
   ctx.globalAlpha = baseAlpha;
   if (n.sources.length === 1) {
@@ -641,22 +732,18 @@ function drawCluster(
   s: NodeRenderState,
 ): void {
   if (n.x === undefined || n.y === undefined) return;
+  const op = getOp(s.opacities, n.id);
+  if (op < 0.05) return;
   const dim = s.highlightedClusterId && n.clusterId !== s.highlightedClusterId ? 0.4 : 1;
-  ctx.globalAlpha = s.fade * dim;
+  ctx.globalAlpha = s.fade * dim * op;
   const absent = !n.isMyCovered;
   const r = n.radius * s.breathing;
 
-  // Fill : couleur "moi" si couvert, gris-amber transparent si absent.
   ctx.beginPath();
   ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-  if (absent) {
-    ctx.fillStyle = withAlpha(ABSENT_CLUSTER_COLOR, 0.12);
-  } else {
-    ctx.fillStyle = 'rgba(99, 102, 241, 0.32)';
-  }
+  ctx.fillStyle = absent ? withAlpha(ABSENT_CLUSTER_COLOR, 0.12) : 'rgba(99, 102, 241, 0.32)';
   ctx.fill();
 
-  // Stroke : continu si couvert, dashed amber si absent.
   if (absent) {
     ctx.setLineDash([5, 4]);
     ctx.strokeStyle = withAlpha(ABSENT_CLUSTER_COLOR, 0.95);
@@ -680,7 +767,6 @@ function drawCenter(
   if (n.x === undefined || n.y === undefined) return;
   ctx.globalAlpha = s.fade;
   const r = n.radius * s.breathing;
-  // Halo permanent, large.
   const grad = ctx.createRadialGradient(n.x, n.y, r, n.x, n.y, r * 2.4);
   grad.addColorStop(0, withAlpha(n.color, 0.55));
   grad.addColorStop(1, withAlpha(n.color, 0));
@@ -688,7 +774,6 @@ function drawCenter(
   ctx.beginPath();
   ctx.arc(n.x, n.y, r * 2.4, 0, Math.PI * 2);
   ctx.fill();
-
   ctx.beginPath();
   ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
   ctx.fillStyle = n.color;
@@ -718,23 +803,26 @@ function drawClusterAndCenterLabels(
   nodes: GraphNode[],
   zoomK: number,
   fade: number,
+  opacityMap: Map<string, NodeOpacity>,
 ): void {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   const baseSize = Math.max(11, Math.min(16, 13 / Math.max(0.6, zoomK)));
   for (const n of nodes) {
     if (n.x === undefined || n.y === undefined) continue;
+    const op = getOp(opacityMap, n.id);
+    if (op < 0.05) continue;
     if (n.kind === 'cluster') {
       const absent = !n.isMyCovered;
       ctx.font = `${absent ? 600 : 500} ${baseSize}px "JetBrains Mono", ui-monospace, monospace`;
       ctx.fillStyle = absent
-        ? withAlpha(ABSENT_CLUSTER_COLOR, 0.95 * fade)
-        : `rgba(255, 255, 255, ${0.92 * fade})`;
+        ? withAlpha(ABSENT_CLUSTER_COLOR, 0.95 * fade * op)
+        : `rgba(255, 255, 255, ${0.92 * fade * op})`;
       const labelText = absent ? `⚠ ${n.name}` : n.name;
       ctx.fillText(labelText, n.x, n.y + n.radius + 8);
       if (absent) {
         ctx.font = `500 ${Math.max(9, baseSize - 3)}px "JetBrains Mono", ui-monospace, monospace`;
-        ctx.fillStyle = withAlpha(ABSENT_CLUSTER_COLOR, 0.7 * fade);
+        ctx.fillStyle = withAlpha(ABSENT_CLUSTER_COLOR, 0.7 * fade * op);
         ctx.fillText('Absent', n.x, n.y + n.radius + 8 + baseSize + 2);
       }
     } else if (n.kind === 'center') {
@@ -750,18 +838,20 @@ function drawKeywordLabels(
   nodes: GraphNode[],
   zoomK: number,
   fade: number,
+  opacityMap: Map<string, NodeOpacity>,
 ): void {
-  // Fade-in entre 1.2× et 1.8×.
   const labelOpacity = clamp((zoomK - 1.2) / 0.6, 0, 1);
   if (labelOpacity <= 0) return;
   ctx.font = `500 ${10 / Math.max(0.6, zoomK / 1.5)}px "JetBrains Mono", ui-monospace, monospace`;
-  ctx.fillStyle = `rgba(230, 230, 240, ${0.55 * labelOpacity * fade})`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   for (const n of nodes) {
     if (n.kind !== 'keyword') continue;
     if (n.x === undefined || n.y === undefined) continue;
-    if (n.radius < 5 && zoomK < 2.2) continue; // n'écrit que les KWs significatifs sauf au gros zoom
+    const op = getOp(opacityMap, n.id);
+    if (op < 0.1) continue;
+    if (n.radius < 5 && zoomK < 2.2) continue;
+    ctx.fillStyle = `rgba(230, 230, 240, ${0.55 * labelOpacity * fade * op})`;
     ctx.fillText(n.keyword, n.x, n.y + n.radius + 4);
   }
 }
@@ -865,7 +955,7 @@ function Legend({ nodes }: { nodes: GraphNode[] }) {
   }
   if (sites.size === 0) return null;
   return (
-    <div className="absolute left-3 top-3 z-10 flex flex-col gap-1 rounded-md border border-border-subtle bg-bg-surface/85 p-2 backdrop-blur">
+    <div className="absolute right-3 top-16 z-10 flex flex-col gap-1 rounded-md border border-border-subtle bg-bg-surface/85 p-2 backdrop-blur">
       {[...sites.values()]
         .sort((a, b) => (a.isMe === b.isMe ? a.label.localeCompare(b.label) : a.isMe ? -1 : 1))
         .map((s) => (
@@ -879,7 +969,7 @@ function Legend({ nodes }: { nodes: GraphNode[] }) {
       <div className="mt-1 flex flex-col gap-0.5 border-t border-border-subtle pt-1.5 text-[10px] text-text-muted">
         <div className="flex items-center gap-2">
           <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-400 shadow-[0_0_8px_3px_rgba(251,191,36,0.45)]" />
-          glow = gap / opportunité
+          glow = opportunité
         </div>
         <div className="flex items-center gap-2">
           <span

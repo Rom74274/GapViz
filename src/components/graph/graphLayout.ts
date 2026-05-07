@@ -1,4 +1,4 @@
-import type { Cluster, Competitor, Keyword } from '@/lib/db';
+import type { Cluster, Competitor, Intent, Keyword } from '@/lib/db';
 
 // ---------------------------------------------------------------------------
 // Node + link types
@@ -51,7 +51,7 @@ export interface KeywordNode extends BaseNode {
   volume: number;
   kd: number | null;
   cpc: number | null;
-  intent: string[];
+  intent: Intent[];
   clusterId: string;
   clusterName: string;
   sources: NodeSource[];
