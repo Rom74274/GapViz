@@ -1,9 +1,8 @@
 import { Link, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ArrowLeft, User, Users, AlertCircle } from 'lucide-react';
+import { ArrowLeft, AlertCircle } from 'lucide-react';
 import { db } from '@/lib/db';
 import { RunClusteringButton } from '@/components/clustering/RunClusteringButton';
-import { ClusterList } from '@/components/clustering/ClusterList';
 import { GraphCanvas } from '@/components/graph/GraphCanvas';
 
 export function ProjectDetailPage() {
@@ -13,28 +12,19 @@ export function ProjectDetailPage() {
     () => (projectId ? db.projects.get(projectId) : undefined),
     [projectId],
   );
-
-  const competitors = useLiveQuery(
-    () =>
-      projectId
-        ? db.competitors.where('projectId').equals(projectId).toArray()
-        : [],
+  const competitorCount = useLiveQuery(
+    () => (projectId ? db.competitors.where('projectId').equals(projectId).count() : 0),
     [projectId],
   );
-
   const keywordCount = useLiveQuery(
-    () =>
-      projectId
-        ? db.keywords.where('projectId').equals(projectId).count()
-        : 0,
+    () => (projectId ? db.keywords.where('projectId').equals(projectId).count() : 0),
     [projectId],
   );
 
   if (project === undefined) {
     return <div className="p-10 text-text-muted">Chargement…</div>;
   }
-
-  if (project === null || project === undefined && projectId) {
+  if (project === null) {
     return (
       <div className="mx-auto max-w-md px-6 py-20 text-center">
         <AlertCircle className="mx-auto mb-3 text-text-muted" size={32} />
@@ -51,80 +41,30 @@ export function ProjectDetailPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-10">
-      <Link
-        to="/projects"
-        className="inline-flex items-center gap-1.5 text-xs text-text-secondary hover:text-text-primary"
-      >
-        <ArrowLeft size={14} />
-        Tous les projets
-      </Link>
-
-      <header className="mt-3 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{project!.name}</h1>
-          <p className="mt-1 font-mono text-sm text-text-muted">
-            {project!.myDomain} · {project!.country}
-          </p>
+    <div className="flex h-full flex-col">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border-subtle bg-bg-surface/60 px-5 py-2.5 backdrop-blur">
+        <div className="flex items-center gap-3">
+          <Link
+            to="/projects"
+            className="rounded p-1 text-text-muted hover:bg-bg-elevated hover:text-text-primary"
+            aria-label="Retour aux projets"
+          >
+            <ArrowLeft size={16} />
+          </Link>
+          <h1 className="text-base font-semibold tracking-tight">{project.name}</h1>
+          <span className="font-mono text-xs text-text-muted">
+            {project.myDomain} · {project.country}
+          </span>
+          <span className="font-mono text-xs text-text-muted">
+            · {keywordCount ?? '…'} KWs · {competitorCount ?? '…'} sites
+          </span>
         </div>
-        <div className="flex gap-4 rounded-lg border border-border-subtle bg-bg-surface px-4 py-2 text-xs">
-          <Stat label="Mots-clés" value={keywordCount ?? '…'} />
-          <Stat label="Sites" value={competitors?.length ?? '…'} />
-        </div>
+        <RunClusteringButton projectId={projectId!} variant="compact" />
       </header>
 
-      <section className="mt-8">
-        <h2 className="mb-3 text-sm font-semibold">Acteurs</h2>
-        <ul className="space-y-2">
-          {competitors?.map((c) => (
-            <li
-              key={c.id}
-              className="flex items-center gap-3 rounded-md border border-border-subtle bg-bg-surface px-3 py-2"
-            >
-              <div
-                className="flex h-7 w-7 items-center justify-center rounded-md"
-                style={{ backgroundColor: c.color + '22', color: c.color }}
-              >
-                {c.isMe ? <User size={14} /> : <Users size={14} />}
-              </div>
-              <div className="flex-1">
-                <span className="text-sm font-medium">{c.label}</span>
-                <span className="ml-2 font-mono text-xs text-text-muted">
-                  {c.domain}
-                </span>
-              </div>
-              {c.isMe && (
-                <span className="rounded-full bg-bg-elevated px-2 py-0.5 text-xs text-text-secondary">
-                  Mon site
-                </span>
-              )}
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="mt-8 space-y-4">
-        <h2 className="text-sm font-semibold">Clustering</h2>
-        <RunClusteringButton projectId={projectId!} />
-      </section>
-
-      <section className="mt-6">
-        <h2 className="mb-3 text-sm font-semibold">MindMap</h2>
+      <div className="relative flex-1 overflow-hidden">
         <GraphCanvas projectId={projectId!} />
-      </section>
-
-      <section className="mt-6">
-        <ClusterList projectId={projectId!} />
-      </section>
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: number | string }) {
-  return (
-    <div className="flex flex-col items-end">
-      <span className="font-mono text-base text-text-primary">{value}</span>
-      <span className="text-text-muted">{label}</span>
+      </div>
     </div>
   );
 }
