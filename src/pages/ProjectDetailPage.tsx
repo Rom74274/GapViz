@@ -1,27 +1,41 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ArrowLeft, AlertCircle } from 'lucide-react';
+import { ArrowLeft, AlertCircle, Network, Table2 } from 'lucide-react';
 import { db } from '@/lib/db';
 import { RunClusteringButton } from '@/components/clustering/RunClusteringButton';
 import { GraphCanvas, type GraphCanvasHandle } from '@/components/graph/GraphCanvas';
 import { ClusterPanel } from '@/components/graph/ClusterPanel';
+import { ProjectStats } from '@/components/graph/ProjectStats';
+import { KeywordTable } from '@/components/graph/KeywordTable';
 import { FilterBar } from '@/components/filters/FilterBar';
+import { useProjectGraph } from '@/lib/useProjectGraph';
+import { useProjectFilters } from '@/lib/filterStore';
+import { isKeywordVisible } from '@/lib/filterLogic';
+import type { KeywordNode } from '@/components/graph/graphLayout';
+import { cn } from '@/lib/utils';
 
 export function ProjectDetailPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const [highlightedClusterId, setHighlightedClusterId] = useState<string | null>(null);
-  const [counts, setCounts] = useState({ visible: 0, total: 0 });
+  const [view, setView] = useState<'graph' | 'table'>('graph');
   const graphRef = useRef<GraphCanvasHandle>(null);
 
-  const project = useLiveQuery(
-    () => (projectId ? db.projects.get(projectId) : undefined),
-    [projectId],
-  );
+  const { graph, project } = useProjectGraph(projectId ?? '');
+  const filters = useProjectFilters(projectId ?? '');
+
   const competitorCount = useLiveQuery(
     () => (projectId ? db.competitors.where('projectId').equals(projectId).count() : 0),
     [projectId],
   );
+
+  const { allKws, visibleKws } = useMemo(() => {
+    const all: KeywordNode[] = graph
+      ? graph.nodes.filter((n): n is KeywordNode => n.kind === 'keyword')
+      : [];
+    const visible = all.filter((n) => isKeywordVisible(n, filters));
+    return { allKws: all, visibleKws: visible };
+  }, [graph, filters]);
 
   if (project === undefined) {
     return <div className="p-10 text-text-muted">Chargement…</div>;
@@ -60,32 +74,85 @@ export function ProjectDetailPage() {
             {project.myDomain} · {project.country}
           </span>
           <span className="font-mono text-xs text-text-muted">
-            · {counts.total} KWs · {competitorCount ?? '…'} sites
+            · {competitorCount ?? '…'} sites
           </span>
         </div>
-        <RunClusteringButton projectId={projectId!} variant="compact" />
+        <div className="flex items-center gap-2">
+          <ViewToggle view={view} onChange={setView} />
+          <RunClusteringButton projectId={projectId!} variant="compact" />
+        </div>
       </header>
 
+      <ProjectStats visibleKws={visibleKws} totalKws={allKws} />
+
+      <FilterBar
+        projectId={projectId!}
+        projectName={project.name}
+        visibleKws={visibleKws}
+        totalKwCount={allKws.length}
+        onZoomToCluster={zoomToCluster}
+      />
+
       <div className="relative flex-1 overflow-hidden">
-        <GraphCanvas
-          ref={graphRef}
-          projectId={projectId!}
-          highlightedClusterId={highlightedClusterId}
-          onCountsChange={(visible, total) => setCounts({ visible, total })}
-        />
-        <FilterBar
-          projectId={projectId!}
-          visibleKwCount={counts.visible}
-          totalKwCount={counts.total}
-          onZoomToCluster={zoomToCluster}
-        />
-        <ClusterPanel
-          projectId={projectId!}
-          highlightedClusterId={highlightedClusterId}
-          onHighlight={setHighlightedClusterId}
-          onZoomToCluster={zoomToCluster}
-        />
+        {view === 'graph' ? (
+          <>
+            <GraphCanvas
+              ref={graphRef}
+              projectId={projectId!}
+              highlightedClusterId={highlightedClusterId}
+            />
+            <ClusterPanel
+              projectId={projectId!}
+              highlightedClusterId={highlightedClusterId}
+              onHighlight={setHighlightedClusterId}
+              onZoomToCluster={zoomToCluster}
+            />
+          </>
+        ) : (
+          <KeywordTable visibleKws={visibleKws} totalKws={allKws} />
+        )}
       </div>
+    </div>
+  );
+}
+
+function ViewToggle({
+  view,
+  onChange,
+}: {
+  view: 'graph' | 'table';
+  onChange: (v: 'graph' | 'table') => void;
+}) {
+  return (
+    <div className="inline-flex rounded-md border border-border-subtle p-0.5">
+      <button
+        type="button"
+        onClick={() => onChange('graph')}
+        className={cn(
+          'flex items-center gap-1 rounded-sm px-2 py-1 text-xs transition-colors',
+          view === 'graph'
+            ? 'bg-bg-elevated text-text-primary'
+            : 'text-text-muted hover:text-text-primary',
+        )}
+        title="Vue graph"
+      >
+        <Network size={12} />
+        Graph
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange('table')}
+        className={cn(
+          'flex items-center gap-1 rounded-sm px-2 py-1 text-xs transition-colors',
+          view === 'table'
+            ? 'bg-bg-elevated text-text-primary'
+            : 'text-text-muted hover:text-text-primary',
+        )}
+        title="Vue tableau"
+      >
+        <Table2 size={12} />
+        Tableau
+      </button>
     </div>
   );
 }

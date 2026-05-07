@@ -40,9 +40,11 @@ export interface ClusterMetaNode extends BaseNode {
   name: string;
   totalVolume: number;
   kwCount: number;
-  isMyCovered: boolean; // au moins un KW du cluster a une source isMe
+  isMyCovered: boolean;
   myKwCount: number;
   competitorOnlyKwCount: number;
+  manualX?: number | null;
+  manualY?: number | null;
 }
 
 export interface KeywordNode extends BaseNode {
@@ -194,6 +196,7 @@ export function buildGraph({
       clusterId === UNCLUSTERED_KEY
         ? UNCLUSTERED_NAME
         : (clusterById.get(clusterId)?.name ?? UNCLUSTERED_NAME);
+    const clusterRecord = clusterById.get(clusterId);
     clusterMetaNodes.push({
       id: `${CLUSTER_PREFIX}${clusterId}`,
       kind: 'cluster',
@@ -204,6 +207,8 @@ export function buildGraph({
       myKwCount: myKws.length,
       competitorOnlyKwCount: competitorOnlyKws.length,
       isMyCovered,
+      manualX: clusterRecord?.manualX ?? null,
+      manualY: clusterRecord?.manualY ?? null,
       radius: scaleRadius(
         kws.length,
         maxClusterSize,

@@ -22,11 +22,14 @@ import {
 } from '@/lib/filterStore';
 import { Popover } from './Popover';
 import { RangeSlider } from './RangeSlider';
+import { ExportButton } from './ExportButton';
 import { cn } from '@/lib/utils';
+import type { KeywordNode } from '@/components/graph/graphLayout';
 
 interface Props {
   projectId: string;
-  visibleKwCount: number;
+  projectName: string;
+  visibleKws: KeywordNode[];
   totalKwCount: number;
   onZoomToCluster?: (clusterId: string) => void;
 }
@@ -38,7 +41,8 @@ const INTENT_OPTIONS: { value: Intent; label: string; color: string }[] = [
   { value: 'navigational', label: 'Navigational', color: '#f59e0b' },
 ];
 
-export function FilterBar({ projectId, visibleKwCount, totalKwCount, onZoomToCluster }: Props) {
+export function FilterBar({ projectId, projectName, visibleKws, totalKwCount, onZoomToCluster }: Props) {
+  const visibleKwCount = visibleKws.length;
   const filters = useProjectFilters(projectId);
   const patch = useFilterStore((s) => s.patch);
   const reset = useFilterStore((s) => s.reset);
@@ -64,8 +68,8 @@ export function FilterBar({ projectId, visibleKwCount, totalKwCount, onZoomToClu
   const active = isAnyFilterActive(filters);
 
   return (
-    <div className="pointer-events-none absolute left-0 right-0 top-0 z-20 px-3 py-3">
-      <div className="pointer-events-auto flex flex-wrap items-center gap-1.5 rounded-full border border-border-subtle bg-bg-surface/85 px-2 py-1.5 shadow-lg backdrop-blur-md">
+    <div className="border-b border-border-subtle bg-bg-surface/60 px-3 py-2 backdrop-blur">
+      <div className="flex flex-wrap items-center gap-1.5">
         <ConcurrentFilter
           allDomains={allDomains}
           competitors={competitors ?? []}
@@ -121,12 +125,20 @@ export function FilterBar({ projectId, visibleKwCount, totalKwCount, onZoomToClu
             type="button"
             onClick={() => reset(projectId)}
             title="Reset filtres"
-            className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] text-text-muted hover:bg-bg-elevated hover:text-text-primary"
+            className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] text-text-muted hover:bg-bg-elevated hover:text-text-primary"
           >
             <RotateCcw size={11} />
             Reset
           </button>
         )}
+
+        <div className="ml-auto">
+          <ExportButton
+            visibleKws={visibleKws}
+            projectName={projectName}
+            filters={filters}
+          />
+        </div>
       </div>
     </div>
   );

@@ -39,6 +39,8 @@ export interface Cluster {
   projectId: string;
   name: string;
   parentId: string | null;
+  manualX?: number | null;
+  manualY?: number | null;
 }
 
 export interface ClusterCacheEntry {

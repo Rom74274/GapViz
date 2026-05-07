@@ -20,6 +20,7 @@ import {
 } from './graphLayout';
 import { GraphToolbar } from './GraphToolbar';
 import { KeywordDetailSidebar } from './KeywordDetailSidebar';
+import { SearchBar } from './SearchBar';
 import { useProjectFilters } from '@/lib/filterStore';
 import { computeNodeVisibility } from '@/lib/filterLogic';
 
@@ -31,6 +32,7 @@ interface Props {
 
 export interface GraphCanvasHandle {
   zoomToCluster: (clusterId: string) => void;
+  zoomToKeyword: (kwId: string) => void;
   resetZoom: () => void;
 }
 
@@ -52,6 +54,15 @@ interface NodeOpacity {
   target: number;
 }
 
+interface DragState {
+  cluster: ClusterMetaNode;
+  startMouseX: number;
+  startMouseY: number;
+  startClusterX: number;
+  startClusterY: number;
+  childOffsets: Map<string, { dx: number; dy: number }>;
+}
+
 const FADE_IN_MS = 1200;
 const ABSENT_CLUSTER_COLOR = '#f59e0b';
 const OPACITY_LERP = 0.18;
@@ -69,12 +80,15 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
   const fadeStartRef = useRef<number>(performance.now());
   const particlesRef = useRef<Particle[]>([]);
   const opacityMapRef = useRef<Map<string, NodeOpacity>>(new Map());
+  const simRef = useRef<d3.Simulation<GraphNode, undefined> | null>(null);
+  const dragRef = useRef<DragState | null>(null);
 
   const [size, setSize] = useState({ width: 800, height: 600 });
   const [hover, setHover] = useState<HoverState | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showLabels, setShowLabels] = useState(true);
   const [showGlow, setShowGlow] = useState(true);
+  const [searchMatchIds, setSearchMatchIds] = useState<Set<string> | null>(null);
 
   const filters = useProjectFilters(projectId);
 
@@ -139,13 +153,17 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
   useImperativeHandle(ref, () => ({
     zoomToCluster: (clusterId: string) => {
       if (!graph || !canvasRef.current || !zoomRef.current) return;
-      const meta = graph.nodes.find(
-        (n): n is ClusterMetaNode => n.kind === 'cluster' && n.clusterId === clusterId,
-      );
-      if (!meta || meta.x === undefined || meta.y === undefined) return;
-      const scale = 2;
+      const t = fitClusterToViewport(graph.nodes, clusterId, size.width, size.height, 0.8);
+      if (!t) return;
+      d3.select(canvasRef.current).transition().duration(500).call(zoomRef.current.transform, t);
+    },
+    zoomToKeyword: (kwId: string) => {
+      if (!graph || !canvasRef.current || !zoomRef.current) return;
+      const node = graph.nodes.find((n) => n.id === kwId);
+      if (!node || node.x === undefined || node.y === undefined) return;
+      const scale = 2.5;
       const t = d3.zoomIdentity
-        .translate(size.width / 2 - meta.x * scale, size.height / 2 - meta.y * scale)
+        .translate(size.width / 2 - node.x * scale, size.height / 2 - node.y * scale)
         .scale(scale);
       d3.select(canvasRef.current).transition().duration(500).call(zoomRef.current.transform, t);
     },
@@ -217,6 +235,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
       highlightedClusterId,
       zoomK: t.k,
       opacities: opMap,
+      searchMatchIds,
     });
 
     drawClusterAndCenterLabels(ctx, graph.nodes, t.k, fade, opMap);
@@ -260,7 +279,9 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
     const sim = d3
       .forceSimulation<GraphNode>(graph.nodes)
       .alpha(1)
-      .alphaDecay(0.02)
+      .alphaDecay(0.02);
+    simRef.current = sim;
+    sim
       .force(
         'link',
         d3
@@ -333,7 +354,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
     };
   }, []);
 
-  // ---------------------------------------------------------------- zoom
+  // ---------------------------------------------------------------- zoom (filter exclut les clusters pour le drag)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -341,6 +362,31 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
     const zoom = d3
       .zoom<HTMLCanvasElement, unknown>()
       .scaleExtent([0.1, 5])
+      .filter((event) => {
+        if (event.button) return false;
+        if (event.type === 'mousedown') {
+          const tree = quadtreeRef.current;
+          if (tree) {
+            const rect = canvas.getBoundingClientRect();
+            const sx = event.clientX - rect.left;
+            const sy = event.clientY - rect.top;
+            const tr = transformRef.current;
+            const wx = (sx - tr.x) / tr.k;
+            const wy = (sy - tr.y) / tr.k;
+            const found = tree.find(wx, wy, 60);
+            if (
+              found &&
+              found.kind === 'cluster' &&
+              found.x !== undefined &&
+              found.y !== undefined &&
+              (wx - found.x) ** 2 + (wy - found.y) ** 2 <= found.radius ** 2
+            ) {
+              return false; // notre drag handler prend le relais
+            }
+          }
+        }
+        return true;
+      })
       .on('zoom', (event) => {
         transformRef.current = event.transform;
       });
@@ -351,7 +397,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
     };
   }, []);
 
-  // ---------------------------------------------------------------- pointer events
+  // ---------------------------------------------------------------- pointer events (hover, click, drag, dblclick)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !graph) return;
@@ -377,33 +423,134 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
       return { sx, sy, wx: (sx - tr.x) / tr.k, wy: (sy - tr.y) / tr.k };
     };
 
+    let downStart: { x: number; y: number } | null = null;
+
     const onMove = (e: MouseEvent) => {
+      if (dragRef.current) return;
       const { sx, sy, wx, wy } = screenToWorld(e);
       const node = findNodeAt(wx, wy);
-      canvas.style.cursor = node && isClickable(node) ? 'pointer' : 'grab';
+      if (node && node.kind === 'cluster') canvas.style.cursor = 'grab';
+      else if (node && isClickable(node)) canvas.style.cursor = 'pointer';
+      else canvas.style.cursor = 'grab';
       if (node) setHover({ node, screenX: sx, screenY: sy });
       else setHover(null);
     };
+
     const onLeave = () => {
       setHover(null);
       canvas.style.cursor = 'grab';
     };
-    const onClick = (e: MouseEvent) => {
+
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      downStart = { x: e.clientX, y: e.clientY };
       const { wx, wy } = screenToWorld(e);
       const node = findNodeAt(wx, wy);
-      if (node && node.kind === 'keyword') setSelectedId(node.id);
-      else setSelectedId(null);
+      if (node?.kind === 'cluster' && node.x !== undefined && node.y !== undefined) {
+        // Démarre le drag.
+        const offsets = new Map<string, { dx: number; dy: number }>();
+        for (const n of graph.nodes) {
+          if (n.kind !== 'keyword' || n.clusterId !== node.clusterId) continue;
+          if (n.x === undefined || n.y === undefined) continue;
+          offsets.set(n.id, { dx: n.x - node.x, dy: n.y - node.y });
+        }
+        dragRef.current = {
+          cluster: node,
+          startMouseX: e.clientX,
+          startMouseY: e.clientY,
+          startClusterX: node.x,
+          startClusterY: node.y,
+          childOffsets: offsets,
+        };
+        node.fx = node.x;
+        node.fy = node.y;
+        if (simRef.current) {
+          simRef.current.alphaTarget(0).stop();
+        }
+        canvas.style.cursor = 'grabbing';
+      }
+    };
+
+    const onDocMove = (e: MouseEvent) => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      const tr = transformRef.current;
+      const dx = (e.clientX - drag.startMouseX) / tr.k;
+      const dy = (e.clientY - drag.startMouseY) / tr.k;
+      const newX = drag.startClusterX + dx;
+      const newY = drag.startClusterY + dy;
+      drag.cluster.fx = newX;
+      drag.cluster.fy = newY;
+      drag.cluster.x = newX;
+      drag.cluster.y = newY;
+      for (const [kwId, offset] of drag.childOffsets) {
+        const kw = graph.nodes.find((n) => n.id === kwId);
+        if (!kw) continue;
+        kw.x = newX + offset.dx;
+        kw.y = newY + offset.dy;
+        kw.vx = 0;
+        kw.vy = 0;
+      }
+    };
+
+    const onDocUp = (e: MouseEvent) => {
+      const drag = dragRef.current;
+      if (drag) {
+        // Persiste la position en Dexie (cluster reste pinned).
+        if (drag.cluster.fx !== null && drag.cluster.fy !== null && drag.cluster.fx !== undefined) {
+          const px = drag.cluster.fx;
+          const py = drag.cluster.fy ?? null;
+          drag.cluster.manualX = px;
+          drag.cluster.manualY = py;
+          db.clusters
+            .update(drag.cluster.clusterId, { manualX: px, manualY: py })
+            .catch((err: unknown) => console.error('cluster save', err));
+        }
+        if (simRef.current) simRef.current.alpha(0.2).restart();
+        dragRef.current = null;
+        canvas.style.cursor = 'grab';
+        return;
+      }
+      // click détection (déplacement minimal).
+      if (downStart) {
+        const dx = e.clientX - downStart.x;
+        const dy = e.clientY - downStart.y;
+        if (dx * dx + dy * dy < 25) {
+          const { wx, wy } = screenToWorld(e);
+          const node = findNodeAt(wx, wy);
+          if (node && node.kind === 'keyword') setSelectedId(node.id);
+          else if (!node) setSelectedId(null);
+        }
+        downStart = null;
+      }
+    };
+
+    const onDblClick = (e: MouseEvent) => {
+      const { wx, wy } = screenToWorld(e);
+      const node = findNodeAt(wx, wy);
+      if (node?.kind === 'cluster' && zoomRef.current) {
+        const t = fitClusterToViewport(graph.nodes, node.clusterId, size.width, size.height, 0.8);
+        if (t) {
+          d3.select(canvas).transition().duration(500).call(zoomRef.current.transform, t);
+        }
+      }
     };
 
     canvas.addEventListener('mousemove', onMove);
     canvas.addEventListener('mouseleave', onLeave);
-    canvas.addEventListener('click', onClick);
+    canvas.addEventListener('mousedown', onMouseDown);
+    canvas.addEventListener('dblclick', onDblClick);
+    document.addEventListener('mousemove', onDocMove);
+    document.addEventListener('mouseup', onDocUp);
     return () => {
       canvas.removeEventListener('mousemove', onMove);
       canvas.removeEventListener('mouseleave', onLeave);
-      canvas.removeEventListener('click', onClick);
+      canvas.removeEventListener('mousedown', onMouseDown);
+      canvas.removeEventListener('dblclick', onDblClick);
+      document.removeEventListener('mousemove', onDocMove);
+      document.removeEventListener('mouseup', onDocUp);
     };
-  }, [graph]);
+  }, [graph, size.width, size.height]);
 
   // ---------------------------------------------------------------- toolbar handlers
   const programmaticZoom = (factor: number) => {
@@ -432,6 +579,23 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
       <canvas ref={canvasRef} className="block" style={{ cursor: 'grab' }} />
       {hover && <NodeTooltip hover={hover} />}
       {graph && <Legend nodes={graph.nodes} />}
+      {graph && (
+        <SearchBar
+          nodes={graph.nodes}
+          onChange={setSearchMatchIds}
+          onSelect={(kwId) => {
+            if (!canvasRef.current || !zoomRef.current) return;
+            const node = graph.nodes.find((n) => n.id === kwId);
+            if (!node || node.x === undefined || node.y === undefined) return;
+            const scale = 2.5;
+            const t = d3.zoomIdentity
+              .translate(size.width / 2 - node.x * scale, size.height / 2 - node.y * scale)
+              .scale(scale);
+            d3.select(canvasRef.current).transition().duration(500).call(zoomRef.current.transform, t);
+            setSelectedId(kwId);
+          }}
+        />
+      )}
       <GraphToolbar
         onZoomIn={() => programmaticZoom(1.5)}
         onZoomOut={() => programmaticZoom(1 / 1.5)}
@@ -494,10 +658,18 @@ function placeInitialPositions(nodes: GraphNode[], width: number, height: number
   const orbit = Math.min(width, height) * 0.32;
   const clusterPos = new Map<string, { x: number; y: number }>();
   for (let i = 0; i < N; i++) {
-    const angle = (i / N) * Math.PI * 2 - Math.PI / 2 + (Math.random() - 0.5) * 0.5;
     const c = clusterMetas[i]!;
-    c.x = cx + orbit * Math.cos(angle);
-    c.y = cy + orbit * Math.sin(angle);
+    if (c.manualX !== null && c.manualX !== undefined && c.manualY !== null && c.manualY !== undefined) {
+      // Position manuelle : pin via fx/fy.
+      c.x = c.manualX;
+      c.y = c.manualY;
+      c.fx = c.manualX;
+      c.fy = c.manualY;
+    } else {
+      const angle = (i / N) * Math.PI * 2 - Math.PI / 2 + (Math.random() - 0.5) * 0.5;
+      c.x = cx + orbit * Math.cos(angle);
+      c.y = cy + orbit * Math.sin(angle);
+    }
     clusterPos.set(c.id, { x: c.x, y: c.y });
   }
   for (const n of nodes) {
@@ -614,6 +786,12 @@ interface NodeRenderState {
   highlightedClusterId: string | null | undefined;
   zoomK: number;
   opacities: Map<string, NodeOpacity>;
+  searchMatchIds: Set<string> | null;
+}
+
+function searchDim(s: NodeRenderState, id: string): number {
+  if (!s.searchMatchIds) return 1;
+  return s.searchMatchIds.has(id) ? 1 : 0.18;
 }
 
 function drawNodesAndHalos(
@@ -698,7 +876,7 @@ function drawKeyword(
   const op = getOp(s.opacities, n.id);
   if (op < 0.05) return;
   const dim = s.highlightedClusterId && n.clusterId !== s.highlightedClusterId ? 0.3 : 1;
-  const baseAlpha = getDepthOpacity(n.radius) * s.fade * dim * op;
+  const baseAlpha = getDepthOpacity(n.radius) * s.fade * dim * op * searchDim(s, n.id);
   const r = n.radius * (s.breathing - 0.005);
   ctx.globalAlpha = baseAlpha;
   if (n.sources.length === 1) {
@@ -735,7 +913,7 @@ function drawCluster(
   const op = getOp(s.opacities, n.id);
   if (op < 0.05) return;
   const dim = s.highlightedClusterId && n.clusterId !== s.highlightedClusterId ? 0.4 : 1;
-  ctx.globalAlpha = s.fade * dim * op;
+  ctx.globalAlpha = s.fade * dim * op * searchDim(s, n.id);
   const absent = !n.isMyCovered;
   const r = n.radius * s.breathing;
 
@@ -859,6 +1037,40 @@ function drawKeywordLabels(
 // ============================================================================
 // Helpers
 // ============================================================================
+
+function fitClusterToViewport(
+  nodes: GraphNode[],
+  clusterId: string,
+  width: number,
+  height: number,
+  padding: number,
+): d3.ZoomTransform | null {
+  const meta = nodes.find(
+    (n): n is ClusterMetaNode => n.kind === 'cluster' && n.clusterId === clusterId,
+  );
+  if (!meta) return null;
+  const subset: GraphNode[] = [meta];
+  for (const n of nodes) {
+    if (n.kind === 'keyword' && n.clusterId === clusterId) subset.push(n);
+  }
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const n of subset) {
+    if (n.x === undefined || n.y === undefined) continue;
+    minX = Math.min(minX, n.x - n.radius);
+    minY = Math.min(minY, n.y - n.radius);
+    maxX = Math.max(maxX, n.x + n.radius);
+    maxY = Math.max(maxY, n.y + n.radius);
+  }
+  if (!isFinite(minX)) return null;
+  const bboxW = maxX - minX;
+  const bboxH = maxY - minY;
+  const scale = Math.min((width * padding) / Math.max(1, bboxW), (height * padding) / Math.max(1, bboxH), 4);
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  return d3.zoomIdentity
+    .translate(width / 2 - cx * scale, height / 2 - cy * scale)
+    .scale(scale);
+}
 
 function withAlpha(hex: string, alpha: number): string {
   const h = hex.replace('#', '').trim();
