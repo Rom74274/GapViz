@@ -1,6 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Sparkles, Loader2, AlertCircle, KeyRound, RefreshCw, Check } from 'lucide-react';
+import {
+  Sparkles,
+  Loader2,
+  AlertCircle,
+  KeyRound,
+  RefreshCw,
+  Check,
+  ChevronDown,
+  Zap,
+  Trash2,
+} from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useSettings } from '@/lib/store';
 import { db } from '@/lib/db';
@@ -9,6 +19,7 @@ import {
   estimateClusteringCost,
   formatUSD,
   uniqueKeywordCount,
+  clearProjectClusterCache,
   type ClusterRunResult,
 } from '@/lib/clustering';
 import { cn } from '@/lib/utils';
@@ -36,6 +47,28 @@ export function RunClusteringButton({ projectId, variant = 'card' }: Props) {
     uniqueKeywordCount(projectId).then(setKwCount);
   }, [projectId, existingClusterCount]);
 
+  const run = async (force: boolean) => {
+    if (!apiKey) return;
+    setStatus('running');
+    setError(null);
+    try {
+      const r = await runClustering(projectId, { apiKey, model, force });
+      setResult(r);
+      setStatus('done');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erreur inconnue');
+      setStatus('error');
+    }
+  };
+
+  const clearCache = async () => {
+    const count = await clearProjectClusterCache(projectId);
+    setError(null);
+    setStatus('idle');
+    setResult(null);
+    alert(`${count} entrée(s) de cache effacée(s) pour ce projet.`);
+  };
+
   if (variant === 'compact') {
     return (
       <CompactView
@@ -46,19 +79,9 @@ export function RunClusteringButton({ projectId, variant = 'card' }: Props) {
         result={result}
         error={error}
         hasExisting={(existingClusterCount ?? 0) > 0}
-        onRun={async () => {
-          if (!apiKey) return;
-          setStatus('running');
-          setError(null);
-          try {
-            const r = await runClustering(projectId, { apiKey, model });
-            setResult(r);
-            setStatus('done');
-          } catch (err) {
-            setError(err instanceof Error ? err.message : 'Erreur inconnue');
-            setStatus('error');
-          }
-        }}
+        onRun={() => run(false)}
+        onForceRun={() => run(true)}
+        onClearCache={clearCache}
       />
     );
   }
@@ -97,18 +120,6 @@ export function RunClusteringButton({ projectId, variant = 'card' }: Props) {
 
   const estimate = estimateClusteringCost(kwCount, model);
   const hasExisting = (existingClusterCount ?? 0) > 0;
-  const onRun = async () => {
-    setStatus('running');
-    setError(null);
-    try {
-      const r = await runClustering(projectId, { apiKey, model });
-      setResult(r);
-      setStatus('done');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erreur inconnue');
-      setStatus('error');
-    }
-  };
 
   return (
     <Card>
@@ -122,48 +133,189 @@ export function RunClusteringButton({ projectId, variant = 'card' }: Props) {
             estimé ~{formatUSD(estimate.usd)} · {model}
           </span>
         </div>
-        {status === 'running' && (
-          <p className="mt-1 text-xs text-text-secondary">
-            Appel Claude en cours… (5–60 s)
-          </p>
-        )}
-        {status === 'done' && result && (
-          <p className="mt-1 flex items-center gap-1.5 text-xs text-green-400">
-            <Check size={12} />
-            {result.clusterCount} clusters
-            {result.fromCache
-              ? ' (depuis le cache, gratuit)'
-              : result.usage
-                ? ` · coût réel ${formatUSD(result.usage.usd)}`
-                : ''}
-            {result.unmatchedCount > 0 && ` · ${result.unmatchedCount} non clusterisés`}
-          </p>
-        )}
-        {status === 'error' && error && (
-          <p className="mt-1 flex items-start gap-1.5 text-xs text-red-400">
-            <AlertCircle size={12} className="mt-0.5 shrink-0" />
-            {error}
-          </p>
-        )}
+        <StatusLine status={status} result={result} error={error} />
       </div>
-      <button
-        type="button"
-        onClick={onRun}
-        disabled={status === 'running'}
-        className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {status === 'running' ? (
-          <Loader2 size={14} className="animate-spin" />
-        ) : hasExisting ? (
-          <RefreshCw size={14} />
-        ) : (
-          <Sparkles size={14} />
-        )}
-        {status === 'running' ? 'Clustering…' : hasExisting ? 'Re-cluster' : 'Lancer le clustering'}
-      </button>
+      <SplitButton
+        onPrimary={() => run(false)}
+        onForce={() => run(true)}
+        onClearCache={clearCache}
+        status={status}
+        hasExisting={hasExisting}
+      />
     </Card>
   );
 }
+
+// ============================================================================
+// Split button (primary action + dropdown menu)
+// ============================================================================
+
+function SplitButton({
+  onPrimary,
+  onForce,
+  onClearCache,
+  status,
+  hasExisting,
+  size = 'normal',
+}: {
+  onPrimary: () => void;
+  onForce: () => void;
+  onClearCache: () => void;
+  status: 'idle' | 'running' | 'error' | 'done';
+  hasExisting: boolean;
+  size?: 'normal' | 'small';
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [open]);
+
+  const small = size === 'small';
+  const Icon = status === 'running'
+    ? Loader2
+    : hasExisting ? RefreshCw : Sparkles;
+  const primaryLabel = status === 'running'
+    ? 'Clustering…'
+    : hasExisting ? 'Re-cluster' : 'Lancer le clustering';
+
+  return (
+    <div ref={wrapperRef} className="relative inline-flex">
+      <button
+        type="button"
+        onClick={onPrimary}
+        disabled={status === 'running'}
+        className={cn(
+          'inline-flex items-center gap-1.5 rounded-l-md border-r border-r-white/15 bg-accent font-medium text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50',
+          small ? 'px-2.5 py-1 text-xs' : 'px-3 py-1.5 text-sm',
+        )}
+      >
+        <Icon size={small ? 12 : 14} className={status === 'running' ? 'animate-spin' : ''} />
+        {primaryLabel}
+      </button>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        disabled={status === 'running'}
+        className={cn(
+          'inline-flex items-center rounded-r-md bg-accent text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50',
+          small ? 'px-1.5 py-1' : 'px-2 py-1.5',
+        )}
+        aria-label="Plus d'options"
+      >
+        <ChevronDown size={small ? 12 : 14} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-30 mt-1 min-w-[260px] rounded-lg border border-border-subtle bg-bg-surface p-1 shadow-2xl">
+          <MenuItem
+            onClick={() => {
+              setOpen(false);
+              onForce();
+            }}
+            icon={<Zap size={12} className="text-amber-400" />}
+            label="Force re-cluster"
+            sub="Ignore le cache, relance Claude (coût)"
+          />
+          <MenuItem
+            onClick={() => {
+              setOpen(false);
+              onClearCache();
+            }}
+            icon={<Trash2 size={12} className="text-red-400" />}
+            label="Vider le cache de ce projet"
+            sub="Le prochain clustering rappellera Claude"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MenuItem({
+  onClick,
+  icon,
+  label,
+  sub,
+}: {
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+  sub: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-start gap-2.5 rounded-md p-2 text-left hover:bg-bg-elevated"
+    >
+      <span className="mt-0.5">{icon}</span>
+      <div className="flex-1">
+        <p className="text-xs font-medium text-text-primary">{label}</p>
+        <p className="mt-0.5 text-[10px] text-text-muted">{sub}</p>
+      </div>
+    </button>
+  );
+}
+
+// ============================================================================
+// Status line
+// ============================================================================
+
+function StatusLine({
+  status,
+  result,
+  error,
+}: {
+  status: 'idle' | 'running' | 'error' | 'done';
+  result: ClusterRunResult | null;
+  error: string | null;
+}) {
+  if (status === 'running') {
+    return (
+      <p className="mt-1 text-xs text-text-secondary">Appel Claude en cours… (5–60 s)</p>
+    );
+  }
+  if (status === 'done' && result) {
+    return (
+      <p className="mt-1 flex items-center gap-1.5 text-xs text-green-400">
+        <Check size={12} />
+        {result.clusterCount} clusters · {result.persistedAssignments} assignations
+        {result.fromCache
+          ? ' · depuis le cache'
+          : result.usage
+            ? ` · coût ${formatUSD(result.usage.usd)}`
+            : ''}
+        {result.unmatchedCount > 0 && ` · ${result.unmatchedCount} non clusterisés`}
+      </p>
+    );
+  }
+  if (status === 'error' && error) {
+    return (
+      <p className="mt-1 flex items-start gap-1.5 text-xs text-red-400">
+        <AlertCircle size={12} className="mt-0.5 shrink-0" />
+        <span>
+          {error}
+          <span className="ml-1 text-text-muted">
+            (logs détaillés en console — F12)
+          </span>
+        </span>
+      </p>
+    );
+  }
+  return null;
+}
+
+// ============================================================================
+// Compact (header)
+// ============================================================================
 
 function CompactView({
   apiKey,
@@ -174,6 +326,8 @@ function CompactView({
   error,
   hasExisting,
   onRun,
+  onForceRun,
+  onClearCache,
 }: {
   apiKey: string | null;
   kwCount: number | null;
@@ -183,6 +337,8 @@ function CompactView({
   error: string | null;
   hasExisting: boolean;
   onRun: () => void;
+  onForceRun: () => void;
+  onClearCache: () => void;
 }) {
   if (!apiKey) {
     return (
@@ -197,16 +353,14 @@ function CompactView({
   }
   const cost =
     kwCount !== null ? formatUSD(estimateClusteringCost(kwCount, model).usd) : '…';
-  const tooltipBits: string[] = [];
-  if (kwCount !== null) tooltipBits.push(`${kwCount} KWs uniques`);
-  tooltipBits.push(`~${cost}`);
-  tooltipBits.push(model);
   return (
     <div className="flex items-center gap-2">
       {status === 'done' && result && (
-        <span className="hidden text-xs text-green-400 sm:inline">
-          {result.clusterCount} clusters
-          {result.fromCache ? ' (cache)' : ''}
+        <span
+          className="hidden text-xs text-green-400 sm:inline"
+          title={`${result.persistedAssignments} assignations${result.fromCache ? ' (cache)' : ''}`}
+        >
+          {result.clusterCount} clusters{result.fromCache ? ' (cache)' : ''}
         </span>
       )}
       {status === 'error' && error && (
@@ -214,27 +368,17 @@ function CompactView({
           {error}
         </span>
       )}
-      <button
-        type="button"
-        onClick={onRun}
-        disabled={status === 'running' || kwCount === 0}
-        title={tooltipBits.join(' · ')}
-        className={cn(
-          'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50',
-          hasExisting
-            ? 'border border-border-subtle bg-bg-surface text-text-secondary hover:border-border-strong hover:text-text-primary'
-            : 'bg-accent text-white hover:bg-accent-hover',
-        )}
-      >
-        {status === 'running' ? (
-          <Loader2 size={12} className="animate-spin" />
-        ) : hasExisting ? (
-          <RefreshCw size={12} />
-        ) : (
-          <Sparkles size={12} />
-        )}
-        {status === 'running' ? 'Clustering…' : hasExisting ? 'Re-cluster' : 'Cluster'}
-      </button>
+      <SplitButton
+        onPrimary={onRun}
+        onForce={onForceRun}
+        onClearCache={onClearCache}
+        status={status}
+        hasExisting={hasExisting}
+        size="small"
+      />
+      <span className="hidden font-mono text-[10px] text-text-muted xl:inline" title={`${kwCount} KWs uniques · ${model}`}>
+        ~{cost}
+      </span>
     </div>
   );
 }

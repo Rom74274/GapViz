@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import { Eye, EyeOff, Save, Trash2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Eye, EyeOff, Save, Trash2, Database } from 'lucide-react';
 import { useSettings } from '@/lib/store';
+import { clearAllClusterCache, getCacheStats } from '@/lib/clustering';
 
 export function SettingsPage() {
   const apiKey = useSettings((s) => s.apiKey);
@@ -98,6 +99,73 @@ export function SettingsPage() {
           <option value="claude-opus-4-7">claude-opus-4-7</option>
         </select>
       </section>
+
+      <ClusterCacheSection />
     </div>
   );
+}
+
+function ClusterCacheSection() {
+  const [stats, setStats] = useState<{ count: number; bytes: number } | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  const refresh = () => {
+    getCacheStats().then(setStats);
+  };
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  const onClear = async () => {
+    if (!confirm('Vider tout le cache de clustering ? Les prochains clusterings rappelleront Claude.')) {
+      return;
+    }
+    const n = await clearAllClusterCache();
+    setFeedback(`${n} entrée(s) supprimée(s).`);
+    refresh();
+    setTimeout(() => setFeedback(null), 3000);
+  };
+
+  return (
+    <section className="mt-6 space-y-3 rounded-lg border border-border-subtle bg-bg-surface p-5">
+      <div>
+        <h2 className="flex items-center gap-2 text-sm font-semibold">
+          <Database size={14} className="text-text-secondary" />
+          Cache de clustering
+        </h2>
+        <p className="mt-1 text-xs text-text-secondary">
+          Les résultats de clustering Claude sont mis en cache (par hash du set
+          de mots-clés). Si une carte t'a l'air bizarre (un seul cluster, ou
+          des KWs non clusterisés), vide le cache et relance avec "Force re-cluster".
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="font-mono text-xs text-text-secondary">
+          {stats === null ? 'Chargement…' : (
+            <>
+              <span className="text-text-primary">{stats.count}</span> entrée{stats.count > 1 ? 's' : ''}
+              <span className="text-text-muted"> · {formatBytes(stats.bytes)}</span>
+            </>
+          )}
+        </span>
+        <button
+          type="button"
+          onClick={onClear}
+          disabled={stats === null || stats.count === 0}
+          className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle px-3 py-1.5 text-xs text-text-secondary hover:border-red-400 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Trash2 size={12} />
+          Vider tout le cache
+        </button>
+        {feedback && <span className="text-xs text-green-400">{feedback}</span>}
+      </div>
+    </section>
+  );
+}
+
+function formatBytes(b: number): string {
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+  return `${(b / 1024 / 1024).toFixed(2)} MB`;
 }
