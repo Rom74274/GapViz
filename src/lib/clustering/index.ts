@@ -382,13 +382,19 @@ async function callClaude(
   const client = createClaudeClient({ apiKey: opts.apiKey });
   let response;
   try {
-    response = await client.messages.create({
-      model: opts.model,
-      max_tokens: MAX_TOKENS,
-      temperature: 0.3,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userMessage }],
-    });
+    // Streaming obligatoire pour les requêtes qui peuvent durer > 10 min
+    // (le SDK Anthropic refuse les appels non-streamés au-delà d'un seuil
+    // estimé à partir de max_tokens). finalMessage() agrège tout et nous
+    // rend l'objet Message complet — même shape que messages.create.
+    response = await client.messages
+      .stream({
+        model: opts.model,
+        max_tokens: MAX_TOKENS,
+        temperature: 0.3,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userMessage }],
+      })
+      .finalMessage();
   } catch (e) {
     errLog(`Claude API call threw (${label})`, e);
     const msg = e instanceof Error ? e.message : 'Erreur inconnue';
