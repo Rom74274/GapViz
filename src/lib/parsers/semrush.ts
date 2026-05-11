@@ -11,7 +11,7 @@ export function parseSemrushRow(raw: Record<string, unknown>): ParsedRow | null 
     position: parseInteger(getCol(raw, 'Position')),
     kd: parseNumber(getCol(raw, 'Keyword Difficulty', 'KD')),
     cpc: parseNumber(getCol(raw, 'CPC')),
-    intent: parseIntent(getCol(raw, 'Keyword Intents', 'Intent')),
+    intent: parseIntent(getCol(raw, 'Keyword Intents', 'Intents', 'Intent', 'Intent type')),
     url: getCol(raw, 'URL') ?? null,
   };
 }

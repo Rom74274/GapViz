@@ -11,6 +11,9 @@ import {
   Crosshair,
   RotateCcw,
   AlertTriangle,
+  CalendarOff,
+  EyeOff,
+  RotateCw,
 } from 'lucide-react';
 import { db, type Intent } from '@/lib/db';
 import {
@@ -101,13 +104,19 @@ export function FilterBar({
           active={filters.gapOnly}
           onClick={() => update({ gapOnly: !filters.gapOnly })}
         />
+        <DateToggle
+          active={filters.hideDatedKeywords}
+          onClick={() => update({ hideDatedKeywords: !filters.hideDatedKeywords })}
+        />
         <ClusterFilter
           allClusterIds={allClusterIds}
           clusters={clusters ?? []}
           keywords={keywords ?? []}
           competitors={competitors ?? []}
           value={filters.activeClusters}
+          excluded={filters.excludedClusters}
           onChange={(activeClusters) => update({ activeClusters })}
+          onExcludedChange={(excludedClusters) => update({ excludedClusters })}
           onZoomToCluster={onZoomToCluster}
         />
         <PositionFilter
@@ -487,6 +496,25 @@ function GapToggle({ active, onClick }: { active: boolean; onClick: () => void }
   );
 }
 
+function DateToggle({ active, onClick }: { active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="Masque les mots-clés contenant une année passée (ex : 'salaire 2024')"
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+        active
+          ? 'border-accent/60 bg-accent/15 text-accent'
+          : 'border-border-subtle bg-bg-base/40 text-text-secondary hover:border-border-strong hover:text-text-primary',
+      )}
+    >
+      <CalendarOff size={12} />
+      KWs datés
+    </button>
+  );
+}
+
 // ============================================================================
 // 6. Cluster
 // ============================================================================
@@ -497,7 +525,9 @@ function ClusterFilter({
   keywords,
   competitors,
   value,
+  excluded,
   onChange,
+  onExcludedChange,
   onZoomToCluster,
 }: {
   allClusterIds: string[];
@@ -505,11 +535,18 @@ function ClusterFilter({
   keywords: { keyword: string; volume: number; clusterId: string | null; sourceDomain: string }[];
   competitors: { domain: string; isMe: boolean }[];
   value: string[] | null;
+  excluded: string[];
   onChange: (v: string[] | null) => void;
+  onExcludedChange: (v: string[]) => void;
   onZoomToCluster?: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const meDomains = new Set(competitors.filter((c) => c.isMe).map((c) => c.domain));
+  const isExcluded = (id: string) => excluded.includes(id);
+  const toggleExcluded = (id: string) => {
+    if (isExcluded(id)) onExcludedChange(excluded.filter((x) => x !== id));
+    else onExcludedChange([...excluded, id]);
+  };
 
   const stats = useMemo(() => {
     const map = new Map<string, { totalVolume: number; isMyCovered: boolean; uniqueKw: Set<string> }>();
@@ -547,9 +584,15 @@ function ClusterFilter({
       className="w-[320px]"
       trigger={
         <FilterButton
-          active={value !== null}
+          active={value !== null || excluded.length > 0}
           icon={<Layers size={12} />}
-          badge={value !== null ? `${value.length}/${allClusterIds.length}` : undefined}
+          badge={
+            excluded.length > 0
+              ? `${value !== null ? value.length : allClusterIds.length - excluded.length}/${allClusterIds.length} · ${excluded.length} exclu${excluded.length > 1 ? 's' : ''}`
+              : value !== null
+                ? `${value.length}/${allClusterIds.length}`
+                : undefined
+          }
           onClick={() => setOpen((v) => !v)}
         >
           Clusters
@@ -571,22 +614,35 @@ function ClusterFilter({
         >
           Aucun
         </button>
+        {excluded.length > 0 && (
+          <button
+            type="button"
+            onClick={() => onExcludedChange([])}
+            title="Restaurer tous les clusters exclus"
+            className="flex-1 rounded px-2 py-1 text-[11px] text-amber-300 hover:bg-bg-elevated"
+          >
+            Restaurer ({excluded.length})
+          </button>
+        )}
       </div>
       <ul className="max-h-[280px] space-y-0.5 overflow-y-auto">
         {stats.map((c) => {
           const on = isOn(c.id);
+          const xcl = isExcluded(c.id);
           return (
             <li
               key={c.id}
               className={cn(
                 'group flex items-center gap-2 rounded px-2 py-1 hover:bg-bg-elevated',
-                !c.isMyCovered && 'bg-amber-500/5',
+                xcl && 'opacity-50 line-through',
+                !c.isMyCovered && !xcl && 'bg-amber-500/5',
               )}
             >
               <button
                 type="button"
                 onClick={() => toggle(c.id)}
-                className="flex flex-1 items-center gap-2 text-left"
+                disabled={xcl}
+                className="flex flex-1 items-center gap-2 text-left disabled:cursor-not-allowed"
               >
                 <span
                   className={cn(
@@ -596,11 +652,15 @@ function ClusterFilter({
                 >
                   {on && <span className="h-2 w-2 rounded-sm bg-accent" />}
                 </span>
-                {!c.isMyCovered && <AlertTriangle size={10} className="text-amber-400" />}
+                {!c.isMyCovered && !xcl && <AlertTriangle size={10} className="text-amber-400" />}
                 <span
                   className={cn(
                     'truncate text-xs',
-                    c.isMyCovered ? 'text-text-primary' : 'text-amber-300',
+                    xcl
+                      ? 'text-text-muted'
+                      : c.isMyCovered
+                        ? 'text-text-primary'
+                        : 'text-amber-300',
                   )}
                 >
                   {c.name}
@@ -609,7 +669,20 @@ function ClusterFilter({
                   {c.totalVolume.toLocaleString('fr-FR')}
                 </span>
               </button>
-              {onZoomToCluster && (
+              <button
+                type="button"
+                onClick={() => toggleExcluded(c.id)}
+                title={xcl ? 'Réinclure ce cluster' : 'Exclure ce cluster du graph, des stats et des exports'}
+                className={cn(
+                  'rounded p-0.5 transition-opacity',
+                  xcl
+                    ? 'text-amber-300 hover:bg-bg-base hover:text-amber-200'
+                    : 'text-text-muted opacity-0 hover:bg-bg-base hover:text-red-400 group-hover:opacity-100',
+                )}
+              >
+                {xcl ? <RotateCw size={11} /> : <EyeOff size={11} />}
+              </button>
+              {onZoomToCluster && !xcl && (
                 <button
                   type="button"
                   onClick={() => {

@@ -180,6 +180,30 @@ describe('parseCSVText — Ahrefs real export (boolean intent columns)', () => {
   });
 });
 
+describe('parseCSVText — Ahrefs avec colonne "Intents" pluriel', () => {
+  const text = fixture('ahrefs.intents-plural.csv');
+  const result = parseCSVText(text);
+
+  it('détecte Ahrefs même avec la colonne Intents (pluriel)', () => {
+    expect(result.format).toBe('ahrefs');
+  });
+
+  it('extrait un intent simple depuis "Intents"', () => {
+    const r = result.rows.find((row) => row.keyword === 'sirh')!;
+    expect(r.intent).toEqual(['informational']);
+  });
+
+  it('extrait plusieurs intents depuis "Intents" (séparés par virgule)', () => {
+    const r = result.rows.find((row) => row.keyword === 'logiciel planning')!;
+    expect(r.intent).toEqual(['informational', 'commercial']);
+  });
+
+  it('extrait un intent transactional depuis "Intents"', () => {
+    const r = result.rows.find((row) => row.keyword === 'gestion des plannings')!;
+    expect(r.intent).toEqual(['transactional']);
+  });
+});
+
 describe('parseCSVText — forceFormat override', () => {
   it('respects forceFormat option', () => {
     const text = 'Keyword,Volume\nfoo,100\n';

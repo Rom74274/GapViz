@@ -27,7 +27,11 @@ export function parseAhrefsRow(raw: Record<string, unknown>): ParsedRow | null {
   const keyword = getCol(raw, 'Keyword');
   if (!keyword) return null;
 
-  const intentString = parseIntent(getCol(raw, 'Intent', 'Keyword Intents'));
+  // Ahrefs varie entre "Intent" / "Intents" / "Keyword Intents" selon le format
+  // d'export. On essaie toutes les variantes string, puis les colonnes booléennes.
+  const intentString = parseIntent(
+    getCol(raw, 'Intent', 'Intents', 'Keyword Intents', 'Intent type'),
+  );
   const intent =
     intentString.length > 0 ? intentString : intentFromBooleans(raw);
 
