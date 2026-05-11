@@ -96,4 +96,67 @@ describe('parseClusterResponse', () => {
     });
     expect(() => parseClusterResponse(text, INPUT)).toThrow(ClusterParseError);
   });
+
+  it('handles trailing text after valid JSON (Claude epilog)', () => {
+    const json = JSON.stringify({
+      clusters: [{ name: 'Planning', keywords: ['logiciel planning'] }],
+    });
+    const text = json + '\n\nJ\'espère que ces clusters te conviennent !';
+    const r = parseClusterResponse(text, INPUT);
+    expect(r.clusters).toHaveLength(1);
+    expect(r.clusters[0]!.keywords).toEqual(['logiciel planning']);
+  });
+
+  it('handles a second JSON object after the first (Claude double output)', () => {
+    const first = JSON.stringify({
+      clusters: [{ name: 'Planning', keywords: ['logiciel planning'] }],
+    });
+    const second = JSON.stringify({ note: 'extra' });
+    const r = parseClusterResponse(`${first}\n${second}`, INPUT);
+    expect(r.clusters).toHaveLength(1);
+    expect(r.clusters[0]!.name).toBe('Planning');
+  });
+
+  it('handles markdown code fences ```json ... ```', () => {
+    const json = JSON.stringify({
+      clusters: [{ name: 'Paie', keywords: ['gestion paie'] }],
+    });
+    const text = '```json\n' + json + '\n```';
+    const r = parseClusterResponse(text, INPUT);
+    expect(r.clusters[0]!.name).toBe('Paie');
+  });
+
+  it('handles markdown code fences without language tag', () => {
+    const json = JSON.stringify({
+      clusters: [{ name: 'Paie', keywords: ['gestion paie'] }],
+    });
+    const text = '```\n' + json + '\n```';
+    const r = parseClusterResponse(text, INPUT);
+    expect(r.clusters[0]!.name).toBe('Paie');
+  });
+
+  it('handles nested braces inside a string (escaped)', () => {
+    // KW contenant des accolades dans une string : "kw with {brace}".
+    // Notre extractor ne doit pas se laisser tromper par les { dans les strings.
+    const json = '{"clusters":[{"name":"Test","keywords":["logiciel planning","sirh"]}]}';
+    const text = 'Voici le JSON :\n' + json + '\n{ "comment": "{ inside }" }';
+    const r = parseClusterResponse(text, INPUT);
+    expect(r.clusters[0]!.keywords).toEqual(['logiciel planning', 'sirh']);
+  });
+
+  it('handles escaped quotes inside strings', () => {
+    const json = '{"clusters":[{"name":"Test \\"quoted\\" cluster","keywords":["sirh"]}]}';
+    const r = parseClusterResponse(json, INPUT);
+    expect(r.clusters[0]!.name).toBe('Test "quoted" cluster');
+  });
+
+  it('handles leading explanation before JSON', () => {
+    const json = JSON.stringify({
+      clusters: [{ name: 'Planning', keywords: ['logiciel planning'] }],
+    });
+    const text =
+      'Voici les clusters que j\'ai identifiés pour ton projet :\n\n' + json;
+    const r = parseClusterResponse(text, INPUT);
+    expect(r.clusters[0]!.name).toBe('Planning');
+  });
 });

@@ -15,27 +15,73 @@ export class ClusterParseError extends Error {
   }
 }
 
-// Tente d'isoler un objet JSON dans un texte (au cas où Claude ajoute un préambule).
+// Tente d'isoler un objet JSON dans un texte (Claude peut ajouter un préambule
+// ou un epilog, des code fences markdown, ou plusieurs blocs).
 function extractJson(text: string): unknown {
-  const trimmed = text.trim();
+  let trimmed = text.trim();
+
+  // Strip markdown code fences si présents.
+  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenceMatch && fenceMatch[1]) {
+    trimmed = fenceMatch[1].trim();
+  }
+
+  // Fast path : si tout le texte est du JSON, on tente direct.
   try {
     return JSON.parse(trimmed);
   } catch {
     // continue
   }
 
-  const start = trimmed.indexOf('{');
-  const end = trimmed.lastIndexOf('}');
-  if (start === -1 || end === -1 || end <= start) {
-    throw new ClusterParseError('Aucun objet JSON détecté dans la réponse');
+  // Brace-balanced extraction du premier objet JSON top-level. Gère les
+  // strings (avec escapes), les objets nested, et le texte avant/après.
+  const extracted = extractFirstBalancedObject(trimmed);
+  if (extracted === null) {
+    throw new ClusterParseError('Aucun objet JSON balanced détecté dans la réponse');
   }
   try {
-    return JSON.parse(trimmed.slice(start, end + 1));
+    return JSON.parse(extracted);
   } catch (err) {
     throw new ClusterParseError(
       `JSON invalide : ${err instanceof Error ? err.message : 'parse error'}`,
     );
   }
+}
+
+function extractFirstBalancedObject(text: string): string | null {
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  let start = -1;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (inString) {
+      if (ch === '\\') {
+        escape = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === '{') {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === '}') {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        return text.slice(start, i + 1);
+      }
+    }
+  }
+  return null;
 }
 
 export function parseClusterResponse(

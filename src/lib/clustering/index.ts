@@ -15,7 +15,7 @@ export type { CostEstimate } from './cost';
 export { estimateClusteringCost, formatUSD, CHUNK_SIZE, CHUNK_THRESHOLD } from './cost';
 export { hashKeywordSet };
 
-const MAX_TOKENS = 16384;
+const MAX_TOKENS = 32768;
 
 export interface ClusterRunProgress {
   chunk: number;
@@ -215,11 +215,12 @@ async function runChunkedClustering(
 
   const merged: Map<string, ClusterAssignment> = new Map();
   const allUnmatched: string[] = [];
+  const failedChunks: number[] = [];
   let totalInput = 0;
   let totalOutput = 0;
   let kwsDone = 0;
 
-  // 1er chunk : appel initial.
+  // 1er chunk : appel initial. Si ça échoue, c'est bloquant — on lève.
   opts.onProgress?.({ chunk: 1, totalChunks, kwsDone, kwsTotal });
   log(`chunk 1/${totalChunks} — initial`);
   const firstKws = chunks[0]!.map((k) => k.keyword);
@@ -233,7 +234,8 @@ async function runChunkedClustering(
   kwsDone += firstKws.length;
   opts.onProgress?.({ chunk: 1, totalChunks, kwsDone, kwsTotal });
 
-  // Chunks suivants : avec contexte des clusters existants.
+  // Chunks suivants : avec contexte des clusters existants. Résilient : si
+  // un chunk échoue, ses KWs vont en unmatched et on continue avec le suivant.
   const kwVolumeMap = new Map<string, number>();
   for (const k of sortedKeywords) {
     const norm = k.keyword.trim().toLowerCase();
@@ -244,16 +246,30 @@ async function runChunkedClustering(
     opts.onProgress?.({ chunk: i + 1, totalChunks, kwsDone, kwsTotal });
     log(`chunk ${i + 1}/${totalChunks} — followup`);
     const chunkKws = chunks[i]!.map((k) => k.keyword);
-    const snapshot = buildSnapshot(merged, kwVolumeMap);
-    const r = await callClaudeFollowup(chunkKws, snapshot, opts);
-    totalInput += r.inputTokens;
-    totalOutput += r.outputTokens;
-    for (const c of r.clusters) {
-      mergeIntoMap(merged, c);
+    try {
+      const snapshot = buildSnapshot(merged, kwVolumeMap);
+      const r = await callClaudeFollowup(chunkKws, snapshot, opts);
+      totalInput += r.inputTokens;
+      totalOutput += r.outputTokens;
+      for (const c of r.clusters) {
+        mergeIntoMap(merged, c);
+      }
+      allUnmatched.push(...r.unmatched);
+    } catch (e) {
+      errLog(`chunk ${i + 1}/${totalChunks} failed — KWs go to unmatched`, e);
+      failedChunks.push(i + 1);
+      // Tous les KWs du chunk en unmatched (seront mis dans "Non clusterisé").
+      allUnmatched.push(...chunkKws);
     }
-    allUnmatched.push(...r.unmatched);
     kwsDone += chunkKws.length;
     opts.onProgress?.({ chunk: i + 1, totalChunks, kwsDone, kwsTotal });
+  }
+
+  if (failedChunks.length > 0) {
+    warn(
+      `${failedChunks.length}/${totalChunks} chunks ont échoué`,
+      { failedChunks, totalUnmatched: allUnmatched.length },
+    );
   }
 
   // Convertit le merged Map en array.
