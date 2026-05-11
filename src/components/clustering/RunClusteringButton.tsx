@@ -20,7 +20,9 @@ import {
   formatUSD,
   uniqueKeywordCount,
   clearProjectClusterCache,
+  CHUNK_THRESHOLD,
   type ClusterRunResult,
+  type ClusterRunProgress,
 } from '@/lib/clustering';
 import { cn } from '@/lib/utils';
 
@@ -42,6 +44,7 @@ export function RunClusteringButton({ projectId, variant = 'card' }: Props) {
   const [status, setStatus] = useState<'idle' | 'running' | 'error' | 'done'>('idle');
   const [result, setResult] = useState<ClusterRunResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<ClusterRunProgress | null>(null);
 
   useEffect(() => {
     uniqueKeywordCount(projectId).then(setKwCount);
@@ -51,13 +54,21 @@ export function RunClusteringButton({ projectId, variant = 'card' }: Props) {
     if (!apiKey) return;
     setStatus('running');
     setError(null);
+    setProgress(null);
     try {
-      const r = await runClustering(projectId, { apiKey, model, force });
+      const r = await runClustering(projectId, {
+        apiKey,
+        model,
+        force,
+        onProgress: (p) => setProgress(p),
+      });
       setResult(r);
       setStatus('done');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur inconnue');
       setStatus('error');
+    } finally {
+      setProgress(null);
     }
   };
 
@@ -78,6 +89,7 @@ export function RunClusteringButton({ projectId, variant = 'card' }: Props) {
         status={status}
         result={result}
         error={error}
+        progress={progress}
         hasExisting={(existingClusterCount ?? 0) > 0}
         onRun={() => run(false)}
         onForceRun={() => run(true)}
@@ -131,9 +143,14 @@ export function RunClusteringButton({ projectId, variant = 'card' }: Props) {
           </p>
           <span className="font-mono text-xs text-text-muted">
             estimé ~{formatUSD(estimate.usd)} · {model}
+            {estimate.chunks > 1 && (
+              <span className="ml-1.5 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300">
+                chunked · {estimate.chunks} appels
+              </span>
+            )}
           </span>
         </div>
-        <StatusLine status={status} result={result} error={error} />
+        <StatusLine status={status} result={result} error={error} progress={progress} />
       </div>
       <SplitButton
         onPrimary={() => run(false)}
@@ -147,7 +164,7 @@ export function RunClusteringButton({ projectId, variant = 'card' }: Props) {
 }
 
 // ============================================================================
-// Split button (primary action + dropdown menu)
+// Split button
 // ============================================================================
 
 function SplitButton({
@@ -180,12 +197,13 @@ function SplitButton({
   }, [open]);
 
   const small = size === 'small';
-  const Icon = status === 'running'
-    ? Loader2
-    : hasExisting ? RefreshCw : Sparkles;
-  const primaryLabel = status === 'running'
-    ? 'Clustering…'
-    : hasExisting ? 'Re-cluster' : 'Lancer le clustering';
+  const Icon = status === 'running' ? Loader2 : hasExisting ? RefreshCw : Sparkles;
+  const primaryLabel =
+    status === 'running'
+      ? 'Clustering…'
+      : hasExisting
+        ? 'Re-cluster'
+        : 'Lancer le clustering';
 
   return (
     <div ref={wrapperRef} className="relative inline-flex">
@@ -266,19 +284,43 @@ function MenuItem({
 }
 
 // ============================================================================
-// Status line
+// Status line + progress bar
 // ============================================================================
 
 function StatusLine({
   status,
   result,
   error,
+  progress,
 }: {
   status: 'idle' | 'running' | 'error' | 'done';
   result: ClusterRunResult | null;
   error: string | null;
+  progress: ClusterRunProgress | null;
 }) {
   if (status === 'running') {
+    if (progress && progress.totalChunks > 1) {
+      const pct = Math.round((progress.kwsDone / Math.max(1, progress.kwsTotal)) * 100);
+      return (
+        <div className="mt-1.5">
+          <div className="flex items-center justify-between text-[11px] text-text-secondary">
+            <span>
+              Chunk <span className="font-mono text-text-primary">{progress.chunk}/{progress.totalChunks}</span>
+              <span className="text-text-muted">
+                {' '}· {progress.kwsDone.toLocaleString('fr-FR')} / {progress.kwsTotal.toLocaleString('fr-FR')} KWs
+              </span>
+            </span>
+            <span className="font-mono text-text-muted">{pct}%</span>
+          </div>
+          <div className="mt-1 h-1 overflow-hidden rounded-full bg-bg-elevated">
+            <div
+              className="h-full bg-accent transition-all duration-300"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+        </div>
+      );
+    }
     return (
       <p className="mt-1 text-xs text-text-secondary">Appel Claude en cours… (5–60 s)</p>
     );
@@ -288,6 +330,7 @@ function StatusLine({
       <p className="mt-1 flex items-center gap-1.5 text-xs text-green-400">
         <Check size={12} />
         {result.clusterCount} clusters · {result.persistedAssignments} assignations
+        {result.totalChunks > 1 && ` · ${result.totalChunks} chunks`}
         {result.fromCache
           ? ' · depuis le cache'
           : result.usage
@@ -303,9 +346,7 @@ function StatusLine({
         <AlertCircle size={12} className="mt-0.5 shrink-0" />
         <span>
           {error}
-          <span className="ml-1 text-text-muted">
-            (logs détaillés en console — F12)
-          </span>
+          <span className="ml-1 text-text-muted">(logs détaillés en console — F12)</span>
         </span>
       </p>
     );
@@ -324,6 +365,7 @@ function CompactView({
   status,
   result,
   error,
+  progress,
   hasExisting,
   onRun,
   onForceRun,
@@ -335,6 +377,7 @@ function CompactView({
   status: 'idle' | 'running' | 'error' | 'done';
   result: ClusterRunResult | null;
   error: string | null;
+  progress: ClusterRunProgress | null;
   hasExisting: boolean;
   onRun: () => void;
   onForceRun: () => void;
@@ -353,18 +396,30 @@ function CompactView({
   }
   const cost =
     kwCount !== null ? formatUSD(estimateClusteringCost(kwCount, model).usd) : '…';
+  const willChunk = kwCount !== null && kwCount > CHUNK_THRESHOLD;
   return (
     <div className="flex items-center gap-2">
+      {status === 'running' && progress && progress.totalChunks > 1 && (
+        <span className="hidden text-xs text-text-secondary sm:inline">
+          chunk <span className="font-mono text-text-primary">{progress.chunk}/{progress.totalChunks}</span>
+          <span className="text-text-muted">
+            {' '}· {progress.kwsDone}/{progress.kwsTotal} KWs
+          </span>
+        </span>
+      )}
       {status === 'done' && result && (
         <span
           className="hidden text-xs text-green-400 sm:inline"
-          title={`${result.persistedAssignments} assignations${result.fromCache ? ' (cache)' : ''}`}
+          title={`${result.persistedAssignments} assignations${result.totalChunks > 1 ? ` · ${result.totalChunks} chunks` : ''}${result.fromCache ? ' · cache' : ''}`}
         >
           {result.clusterCount} clusters{result.fromCache ? ' (cache)' : ''}
         </span>
       )}
       {status === 'error' && error && (
-        <span className="hidden max-w-xs truncate text-xs text-red-400 sm:inline" title={error}>
+        <span
+          className="hidden max-w-xs truncate text-xs text-red-400 sm:inline"
+          title={error}
+        >
           {error}
         </span>
       )}
@@ -376,8 +431,16 @@ function CompactView({
         hasExisting={hasExisting}
         size="small"
       />
-      <span className="hidden font-mono text-[10px] text-text-muted xl:inline" title={`${kwCount} KWs uniques · ${model}`}>
+      <span
+        className="hidden font-mono text-[10px] text-text-muted xl:inline"
+        title={`${kwCount} KWs uniques · ${model}${willChunk ? ' · chunked' : ''}`}
+      >
         ~{cost}
+        {willChunk && (
+          <span className="ml-1 rounded-full bg-amber-500/15 px-1 py-0.5 text-amber-300">
+            chunked
+          </span>
+        )}
       </span>
     </div>
   );

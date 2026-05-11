@@ -1,13 +1,28 @@
 import { db, type Cluster, type Keyword } from '@/lib/db';
 import { createClaudeClient } from '@/lib/claude';
-import { SYSTEM_PROMPT, buildUserMessage } from './prompt';
+import {
+  SYSTEM_PROMPT,
+  FOLLOWUP_SYSTEM_PROMPT,
+  buildUserMessage,
+  buildFollowupUserMessage,
+  type ExistingClusterSnapshot,
+} from './prompt';
 import { hashKeywordSet } from './hash';
 import { parseClusterResponse, type ClusterAssignment } from './parse';
-import { actualCost } from './cost';
+import { actualCost, CHUNK_SIZE, CHUNK_THRESHOLD } from './cost';
 
 export type { CostEstimate } from './cost';
-export { estimateClusteringCost, formatUSD } from './cost';
+export { estimateClusteringCost, formatUSD, CHUNK_SIZE, CHUNK_THRESHOLD } from './cost';
 export { hashKeywordSet };
+
+const MAX_TOKENS = 16384;
+
+export interface ClusterRunProgress {
+  chunk: number;
+  totalChunks: number;
+  kwsDone: number;
+  kwsTotal: number;
+}
 
 export interface ClusterRunResult {
   fromCache: boolean;
@@ -16,6 +31,7 @@ export interface ClusterRunResult {
   unclusteredClusterId: string | null;
   uniqueKeywordCount: number;
   persistedAssignments: number;
+  totalChunks: number;
   usage: {
     inputTokens: number;
     outputTokens: number;
@@ -26,14 +42,15 @@ export interface ClusterRunResult {
 export interface RunClusteringOptions {
   apiKey: string;
   model: string;
-  force?: boolean; // ignore le cache + relance l'appel API
+  force?: boolean;
+  onProgress?: (progress: ClusterRunProgress) => void;
 }
 
 const UNCLUSTERED_LABEL = 'Non clusterisé';
 
 const log = (...args: unknown[]) => console.log('[clustering]', ...args);
 const warn = (...args: unknown[]) => console.warn('[clustering]', ...args);
-const err = (...args: unknown[]) => console.error('[clustering]', ...args);
+const errLog = (...args: unknown[]) => console.error('[clustering]', ...args);
 
 export async function runClustering(
   projectId: string,
@@ -42,12 +59,8 @@ export async function runClustering(
   const t0 = performance.now();
   log('start', { projectId, model: opts.model, force: !!opts.force });
 
-  const allKeywords = await db.keywords
-    .where('projectId')
-    .equals(projectId)
-    .toArray();
+  const allKeywords = await db.keywords.where('projectId').equals(projectId).toArray();
   log('loaded raw keywords', { count: allKeywords.length });
-
   if (allKeywords.length === 0) {
     throw new Error(
       'Aucun mot-clé dans ce projet — importe au moins un CSV avant de clusteriser.',
@@ -58,6 +71,10 @@ export async function runClustering(
   const uniqueCount = uniqueKeywords.length;
   log('deduped unique keywords', { unique: uniqueCount, raw: allKeywords.length });
 
+  // Tri par volume desc — important pour le chunking (les plus gros KWs dans
+  // le 1er chunk, ils définissent la structure de clusters initiale).
+  uniqueKeywords.sort((a, b) => b.volume - a.volume);
+
   const hash = await hashKeywordSet(uniqueKeywords.map((k) => k.keyword));
   log('keyword set hash', { hash });
 
@@ -66,6 +83,7 @@ export async function runClustering(
   let unmatched: string[];
   let usage: ClusterRunResult['usage'] = null;
   let fromCache = false;
+  let totalChunks = 1;
 
   if (cached) {
     log('cache HIT', { createdAt: new Date(cached.createdAt).toISOString() });
@@ -77,14 +95,12 @@ export async function runClustering(
     unmatched = payload.unmatched;
     fromCache = true;
     if (assignments.length === 0) {
-      warn(
-        'cache contains 0 clusters — invalidating and re-calling Claude',
-        hash,
-      );
+      warn('cache contains 0 clusters — invalidating and re-clustering', hash);
       await db.clusterCache.delete(hash);
-      const result = await callClaudeWithLog(uniqueKeywords.map((k) => k.keyword), opts);
+      const result = await runClaudePass(uniqueKeywords, opts);
       assignments = result.clusters;
       unmatched = result.unmatched;
+      totalChunks = result.totalChunks;
       usage = {
         inputTokens: result.inputTokens,
         outputTokens: result.outputTokens,
@@ -97,12 +113,16 @@ export async function runClustering(
         payload: { clusters: assignments, unmatched },
         createdAt: Date.now(),
       });
+    } else {
+      // Signal "progress complete" pour les caches HIT (UI peut afficher 1/1).
+      opts.onProgress?.({ chunk: 1, totalChunks: 1, kwsDone: uniqueCount, kwsTotal: uniqueCount });
     }
   } else {
     log('cache MISS — calling Claude');
-    const result = await callClaudeWithLog(uniqueKeywords.map((k) => k.keyword), opts);
+    const result = await runClaudePass(uniqueKeywords, opts);
     assignments = result.clusters;
     unmatched = result.unmatched;
+    totalChunks = result.totalChunks;
     usage = {
       inputTokens: result.inputTokens,
       outputTokens: result.outputTokens,
@@ -124,17 +144,17 @@ export async function runClustering(
   });
 
   if (assignments.length === 0) {
-    err('Claude returned 0 valid clusters');
+    errLog('Claude returned 0 valid clusters');
     throw new Error(
-      'Le clustering n\'a produit aucun cluster valide. Le prompt ou la réponse Claude est probablement en cause. Réessaie avec "Force re-cluster" ou ouvre la console pour voir la réponse brute.',
+      'Le clustering n\'a produit aucun cluster valide. Réessaie avec "Force re-cluster" ou ouvre la console pour voir la réponse brute.',
     );
   }
 
   if (uniqueCount >= 30 && assignments.length === 1) {
-    warn(
-      'only 1 cluster for many keywords — Claude may have over-grouped',
-      { uniqueCount, clusterName: assignments[0]!.name },
-    );
+    warn('only 1 cluster for many keywords — Claude may have over-grouped', {
+      uniqueCount,
+      clusterName: assignments[0]!.name,
+    });
   }
 
   const persistResult = await persistClusters(projectId, assignments, unmatched);
@@ -147,13 +167,158 @@ export async function runClustering(
     unclusteredClusterId: persistResult.unclusteredId,
     uniqueKeywordCount: uniqueCount,
     persistedAssignments: persistResult.assignmentCount,
+    totalChunks,
     usage,
   };
   log('done', { duration_ms: Math.round(performance.now() - t0), result });
   return result;
 }
 
-async function callClaudeWithLog(
+// ============================================================================
+// Single-call or chunked dispatch
+// ============================================================================
+
+interface ClaudePassResult {
+  clusters: ClusterAssignment[];
+  unmatched: string[];
+  inputTokens: number;
+  outputTokens: number;
+  totalChunks: number;
+}
+
+async function runClaudePass(
+  sortedKeywords: Keyword[],
+  opts: RunClusteringOptions,
+): Promise<ClaudePassResult> {
+  if (sortedKeywords.length <= CHUNK_THRESHOLD) {
+    log('single-call mode', { kwCount: sortedKeywords.length });
+    const kws = sortedKeywords.map((k) => k.keyword);
+    opts.onProgress?.({ chunk: 1, totalChunks: 1, kwsDone: 0, kwsTotal: kws.length });
+    const r = await callClaudeInitial(kws, opts);
+    opts.onProgress?.({ chunk: 1, totalChunks: 1, kwsDone: kws.length, kwsTotal: kws.length });
+    return { ...r, totalChunks: 1 };
+  }
+  return runChunkedClustering(sortedKeywords, opts);
+}
+
+async function runChunkedClustering(
+  sortedKeywords: Keyword[],
+  opts: RunClusteringOptions,
+): Promise<ClaudePassResult> {
+  const chunks: Keyword[][] = [];
+  for (let i = 0; i < sortedKeywords.length; i += CHUNK_SIZE) {
+    chunks.push(sortedKeywords.slice(i, i + CHUNK_SIZE));
+  }
+  const totalChunks = chunks.length;
+  const kwsTotal = sortedKeywords.length;
+  log('chunked mode', { totalChunks, chunkSize: CHUNK_SIZE, kwsTotal });
+
+  const merged: Map<string, ClusterAssignment> = new Map();
+  const allUnmatched: string[] = [];
+  let totalInput = 0;
+  let totalOutput = 0;
+  let kwsDone = 0;
+
+  // 1er chunk : appel initial.
+  opts.onProgress?.({ chunk: 1, totalChunks, kwsDone, kwsTotal });
+  log(`chunk 1/${totalChunks} — initial`);
+  const firstKws = chunks[0]!.map((k) => k.keyword);
+  const first = await callClaudeInitial(firstKws, opts);
+  totalInput += first.inputTokens;
+  totalOutput += first.outputTokens;
+  for (const c of first.clusters) {
+    mergeIntoMap(merged, c);
+  }
+  allUnmatched.push(...first.unmatched);
+  kwsDone += firstKws.length;
+  opts.onProgress?.({ chunk: 1, totalChunks, kwsDone, kwsTotal });
+
+  // Chunks suivants : avec contexte des clusters existants.
+  const kwVolumeMap = new Map<string, number>();
+  for (const k of sortedKeywords) {
+    const norm = k.keyword.trim().toLowerCase();
+    if (!kwVolumeMap.has(norm)) kwVolumeMap.set(norm, k.volume);
+  }
+
+  for (let i = 1; i < totalChunks; i++) {
+    opts.onProgress?.({ chunk: i + 1, totalChunks, kwsDone, kwsTotal });
+    log(`chunk ${i + 1}/${totalChunks} — followup`);
+    const chunkKws = chunks[i]!.map((k) => k.keyword);
+    const snapshot = buildSnapshot(merged, kwVolumeMap);
+    const r = await callClaudeFollowup(chunkKws, snapshot, opts);
+    totalInput += r.inputTokens;
+    totalOutput += r.outputTokens;
+    for (const c of r.clusters) {
+      mergeIntoMap(merged, c);
+    }
+    allUnmatched.push(...r.unmatched);
+    kwsDone += chunkKws.length;
+    opts.onProgress?.({ chunk: i + 1, totalChunks, kwsDone, kwsTotal });
+  }
+
+  // Convertit le merged Map en array.
+  const clusters = [...merged.values()];
+  log('merge complete', {
+    totalClusters: clusters.length,
+    totalUnmatched: allUnmatched.length,
+    totalInput,
+    totalOutput,
+  });
+
+  return {
+    clusters,
+    unmatched: allUnmatched,
+    inputTokens: totalInput,
+    outputTokens: totalOutput,
+    totalChunks,
+  };
+}
+
+function mergeIntoMap(
+  map: Map<string, ClusterAssignment>,
+  cluster: ClusterAssignment,
+): void {
+  // Normalise le nom pour la dédup (case-insensitive, trim).
+  const key = cluster.name.trim().toLowerCase();
+  const existing = map.get(key);
+  if (existing) {
+    const seen = new Set(existing.keywords.map((k) => k.trim().toLowerCase()));
+    for (const kw of cluster.keywords) {
+      const norm = kw.trim().toLowerCase();
+      if (!seen.has(norm)) {
+        existing.keywords.push(kw);
+        seen.add(norm);
+      }
+    }
+  } else {
+    map.set(key, { name: cluster.name, keywords: [...cluster.keywords] });
+  }
+}
+
+function buildSnapshot(
+  merged: Map<string, ClusterAssignment>,
+  volumeMap: Map<string, number>,
+): ExistingClusterSnapshot[] {
+  const out: ExistingClusterSnapshot[] = [];
+  for (const c of merged.values()) {
+    // Trie les KWs du cluster par volume desc (pour les exemples).
+    const sorted = [...c.keywords].sort((a, b) => {
+      const va = volumeMap.get(a.trim().toLowerCase()) ?? 0;
+      const vb = volumeMap.get(b.trim().toLowerCase()) ?? 0;
+      return vb - va;
+    });
+    out.push({ name: c.name, examples: sorted.slice(0, 4) });
+  }
+  // Tri des clusters par taille desc (les + gros en premier dans le prompt).
+  out.sort((a, b) => b.examples.length - a.examples.length);
+  return out;
+}
+
+// ============================================================================
+// Claude calls
+// ============================================================================
+
+async function callClaudeInitial(
   keywords: string[],
   opts: RunClusteringOptions,
 ): Promise<{
@@ -163,50 +328,83 @@ async function callClaudeWithLog(
   outputTokens: number;
 }> {
   const userMessage = buildUserMessage(keywords);
-  log('Claude request', {
-    model: opts.model,
-    keywordCount: keywords.length,
+  return callClaude(SYSTEM_PROMPT, userMessage, keywords, opts, 'initial');
+}
+
+async function callClaudeFollowup(
+  keywords: string[],
+  existing: ExistingClusterSnapshot[],
+  opts: RunClusteringOptions,
+): Promise<{
+  clusters: ClusterAssignment[];
+  unmatched: string[];
+  inputTokens: number;
+  outputTokens: number;
+}> {
+  const userMessage = buildFollowupUserMessage(keywords, existing);
+  return callClaude(FOLLOWUP_SYSTEM_PROMPT, userMessage, keywords, opts, 'followup');
+}
+
+async function callClaude(
+  systemPrompt: string,
+  userMessage: string,
+  keywordsInChunk: string[],
+  opts: RunClusteringOptions,
+  label: string,
+): Promise<{
+  clusters: ClusterAssignment[];
+  unmatched: string[];
+  inputTokens: number;
+  outputTokens: number;
+}> {
+  log(`Claude request (${label})`, {
+    keywordCount: keywordsInChunk.length,
     userMessageChars: userMessage.length,
-    systemChars: SYSTEM_PROMPT.length,
+    systemChars: systemPrompt.length,
   });
 
   const client = createClaudeClient({ apiKey: opts.apiKey });
-
   let response;
   try {
     response = await client.messages.create({
       model: opts.model,
-      max_tokens: 8192,
+      max_tokens: MAX_TOKENS,
       temperature: 0.3,
-      system: SYSTEM_PROMPT,
+      system: systemPrompt,
       messages: [{ role: 'user', content: userMessage }],
     });
   } catch (e) {
-    err('Claude API call threw', e);
+    errLog(`Claude API call threw (${label})`, e);
     const msg = e instanceof Error ? e.message : 'Erreur inconnue';
     throw new Error(`Appel Claude échoué : ${msg}`);
   }
 
-  log('Claude response', {
+  log(`Claude response (${label})`, {
     stop_reason: response.stop_reason,
     inputTokens: response.usage.input_tokens,
     outputTokens: response.usage.output_tokens,
   });
 
-  const textBlock = response.content.find((c) => c.type === 'text');
-  if (!textBlock || textBlock.type !== 'text') {
-    err('no text block in response', response.content);
-    throw new Error('Pas de réponse texte reçue de Claude');
+  if (response.stop_reason === 'max_tokens') {
+    warn(
+      `Claude hit max_tokens on ${label} chunk — réponse probablement tronquée`,
+      { keywordsInChunk: keywordsInChunk.length },
+    );
   }
 
-  log('Claude raw text (first 500 chars):', textBlock.text.slice(0, 500));
+  const textBlock = response.content.find((c) => c.type === 'text');
+  if (!textBlock || textBlock.type !== 'text') {
+    errLog(`no text block in response (${label})`, response.content);
+    throw new Error('Pas de réponse texte reçue de Claude');
+  }
+  log(`Claude raw text first 500 (${label}):`, textBlock.text.slice(0, 500));
 
   let parsed;
   try {
-    parsed = parseClusterResponse(textBlock.text, keywords);
+    parsed = parseClusterResponse(textBlock.text, keywordsInChunk);
   } catch (e) {
-    err('parse failed', e);
-    err('full response text:', textBlock.text);
+    errLog(`parse failed (${label})`, e);
+    errLog('full response text:', textBlock.text);
     throw e;
   }
 
@@ -217,6 +415,10 @@ async function callClaudeWithLog(
     outputTokens: response.usage.output_tokens,
   };
 }
+
+// ============================================================================
+// Persistence
+// ============================================================================
 
 function dedupeByKeyword(keywords: Keyword[]): Keyword[] {
   const seen = new Map<string, Keyword>();
@@ -297,8 +499,7 @@ async function persistClusters(
       }
     }
 
-    // Reset clusterId à null pour tous les KWs du projet, puis applique les
-    // updates. On serialize les updates pour éviter toute race.
+    // Sérialise les updates pour éviter toute race condition.
     for (const k of allKws) {
       await db.keywords.update(k.id, { clusterId: null });
     }
@@ -323,9 +524,9 @@ export async function uniqueKeywordCount(projectId: string): Promise<number> {
   return set.size;
 }
 
-// ---------------------------------------------------------------------------
+// ============================================================================
 // Cache management
-// ---------------------------------------------------------------------------
+// ============================================================================
 
 export async function getCacheStats(): Promise<{ count: number; bytes: number }> {
   const all = await db.clusterCache.toArray();
