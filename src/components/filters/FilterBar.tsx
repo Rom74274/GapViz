@@ -14,6 +14,7 @@ import {
   CalendarOff,
   EyeOff,
   RotateCw,
+  Award,
 } from 'lucide-react';
 import { db, type Intent } from '@/lib/db';
 import {
@@ -107,6 +108,10 @@ export function FilterBar({
         <DateToggle
           active={filters.hideDatedKeywords}
           onClick={() => update({ hideDatedKeywords: !filters.hideDatedKeywords })}
+        />
+        <BrandedToggle
+          active={filters.hideBranded}
+          onClick={() => update({ hideBranded: !filters.hideBranded })}
         />
         <ClusterFilter
           allClusterIds={allClusterIds}
@@ -511,6 +516,25 @@ function DateToggle({ active, onClick }: { active: boolean; onClick: () => void 
     >
       <CalendarOff size={12} />
       KWs datés
+    </button>
+  );
+}
+
+function BrandedToggle({ active, onClick }: { active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="Masque les mots-clés flaggés branded par Ahrefs"
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+        active
+          ? 'border-accent/60 bg-accent/15 text-accent'
+          : 'border-border-subtle bg-bg-base/40 text-text-secondary hover:border-border-strong hover:text-text-primary',
+      )}
+    >
+      <Award size={12} />
+      Branded
     </button>
   );
 }

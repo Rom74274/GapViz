@@ -59,6 +59,9 @@ export interface KeywordNode extends BaseNode {
   sources: NodeSource[];
   isGap: boolean;
   primaryColor: string; // 1ʳᵉ source utilisée pour halos / glow
+  branded: boolean; // au moins une source dit "Branded = true"
+  traffic: number | null; // max trafic estimé parmi les sources
+  serpFeatures: string | null; // 1ʳᵉ source non-null
 }
 
 export type GraphNode = CenterNode | ClusterMetaNode | KeywordNode;
@@ -159,6 +162,13 @@ export function buildGraph({
       clusterById.get(first.clusterId ?? '')?.name ?? UNCLUSTERED_NAME;
     const isGap = !sources.some((s) => s.isMe);
     const primaryColor = pickPrimaryColor(sources);
+    const branded = group.some((k) => k.branded === true);
+    const trafficValues = group
+      .map((k) => k.traffic)
+      .filter((t): t is number => typeof t === 'number');
+    const traffic = trafficValues.length > 0 ? Math.max(...trafficValues) : null;
+    const serpFeatures =
+      group.find((k) => k.serpFeatures && k.serpFeatures.trim() !== '')?.serpFeatures ?? null;
 
     const node: KeywordNode = {
       id: `${KEYWORD_PREFIX}${first.keyword.trim().toLowerCase()}`,
@@ -173,6 +183,9 @@ export function buildGraph({
       sources,
       isGap,
       primaryColor,
+      branded,
+      traffic,
+      serpFeatures,
       radius: scaleRadius(volume, maxVolume, KW_MIN_RADIUS, KW_MAX_RADIUS, 'pow', 0.6),
     };
     keywordNodes.push(node);

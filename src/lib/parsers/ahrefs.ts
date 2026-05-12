@@ -8,17 +8,21 @@ import {
   parseNumber,
 } from './normalize';
 
-const INTENT_BOOLEAN_COLS: Array<[string, Intent]> = [
-  ['Is Informational', 'informational'],
-  ['Is Commercial', 'commercial'],
-  ['Is Transactional', 'transactional'],
-  ['Is Navigational', 'navigational'],
+// Ahrefs varie selon la version d'export :
+// - "Informational" (forme courte, exports récents)
+// - "Is Informational" (forme historique)
+// getCol est case-insensitive donc "INFORMATIONAL" et "informational" matchent aussi.
+const INTENT_BOOLEAN_COLS: Array<{ variants: string[]; intent: Intent }> = [
+  { variants: ['Informational', 'Is Informational'], intent: 'informational' },
+  { variants: ['Commercial', 'Is Commercial'], intent: 'commercial' },
+  { variants: ['Transactional', 'Is Transactional'], intent: 'transactional' },
+  { variants: ['Navigational', 'Is Navigational'], intent: 'navigational' },
 ];
 
 function intentFromBooleans(raw: Record<string, unknown>): Intent[] {
   const out: Intent[] = [];
-  for (const [col, value] of INTENT_BOOLEAN_COLS) {
-    if (parseBoolean(getCol(raw, col))) out.push(value);
+  for (const { variants, intent } of INTENT_BOOLEAN_COLS) {
+    if (parseBoolean(getCol(raw, ...variants))) out.push(intent);
   }
   return out;
 }
@@ -27,13 +31,14 @@ export function parseAhrefsRow(raw: Record<string, unknown>): ParsedRow | null {
   const keyword = getCol(raw, 'Keyword');
   if (!keyword) return null;
 
-  // Ahrefs varie entre "Intent" / "Intents" / "Keyword Intents" selon le format
-  // d'export. On essaie toutes les variantes string, puis les colonnes booléennes.
+  // Forme string : "Intent" / "Intents" / "Keyword Intents" / "Intent type".
   const intentString = parseIntent(
     getCol(raw, 'Intent', 'Intents', 'Keyword Intents', 'Intent type'),
   );
   const intent =
     intentString.length > 0 ? intentString : intentFromBooleans(raw);
+
+  const branded = brandedFromCols(raw);
 
   return {
     keyword,
@@ -43,5 +48,14 @@ export function parseAhrefsRow(raw: Record<string, unknown>): ParsedRow | null {
     cpc: parseNumber(getCol(raw, 'CPC')),
     intent,
     url: getCol(raw, 'URL', 'Current URL') ?? null,
+    traffic: parseInteger(getCol(raw, 'Traffic', 'Organic traffic')),
+    serpFeatures: getCol(raw, 'SERP features', 'SERP Features') ?? null,
+    branded,
   };
+}
+
+function brandedFromCols(raw: Record<string, unknown>): boolean | null {
+  const v = getCol(raw, 'Branded', 'Is branded', 'Brand');
+  if (v === undefined) return null;
+  return parseBoolean(v);
 }

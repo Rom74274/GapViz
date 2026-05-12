@@ -93,6 +93,20 @@ export function KeywordDetailSidebar({ node, projectId, onClose }: Props) {
               label="CPC"
             />
           </div>
+          {(node.traffic !== null || node.branded || node.serpFeatures) && (
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              <Stat
+                value={node.traffic !== null ? node.traffic.toLocaleString('fr-FR') : '—'}
+                label="Trafic est."
+              />
+              <Stat value={node.branded ? 'Oui' : '—'} label="Branded" />
+              <Stat
+                value={node.serpFeatures ? truncate(node.serpFeatures, 14) : '—'}
+                label="SERP"
+                title={node.serpFeatures ?? undefined}
+              />
+            </div>
+          )}
           {node.intent.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-1">
               {node.intent.map((i) => (
@@ -259,13 +273,26 @@ function SourceRow({
   );
 }
 
-function Stat({ value, label }: { value: string; label: string }) {
+function Stat({
+  value,
+  label,
+  title,
+}: {
+  value: string;
+  label: string;
+  title?: string;
+}) {
   return (
-    <div className="rounded-md bg-bg-base px-2 py-1.5">
-      <p className="font-mono text-sm">{value}</p>
+    <div className="rounded-md bg-bg-base px-2 py-1.5" title={title}>
+      <p className="truncate font-mono text-sm">{value}</p>
       <p className="text-[10px] uppercase tracking-wide text-text-muted">{label}</p>
     </div>
   );
+}
+
+function truncate(s: string, n: number): string {
+  if (s.length <= n) return s;
+  return s.slice(0, n - 1) + '…';
 }
 
 function Sparkle() {

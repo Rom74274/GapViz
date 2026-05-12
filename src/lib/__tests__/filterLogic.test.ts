@@ -18,6 +18,9 @@ function kw(partial: Partial<KeywordNode>): KeywordNode {
     sources: [],
     isGap: false,
     primaryColor: '#000000',
+    branded: false,
+    traffic: null,
+    serpFeatures: null,
     ...partial,
   };
 }

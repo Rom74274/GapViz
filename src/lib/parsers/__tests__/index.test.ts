@@ -204,6 +204,94 @@ describe('parseCSVText — Ahrefs avec colonne "Intents" pluriel', () => {
   });
 });
 
+describe('parseCSVText — Ahrefs avec colonnes intent SANS préfixe "Is "', () => {
+  const text = fixture('ahrefs.unprefixed-intents.csv');
+  const result = parseCSVText(text);
+
+  it('détecte toujours Ahrefs', () => {
+    expect(result.format).toBe('ahrefs');
+  });
+
+  it('extrait l\'intent depuis colonne "Informational" (sans préfixe)', () => {
+    const r = result.rows.find((row) => row.keyword === 'sirh')!;
+    expect(r.intent).toEqual(['informational']);
+  });
+
+  it('gère les variations de casse (TRUE en majuscules)', () => {
+    const r = result.rows.find((row) => row.keyword === 'gestion des plannings')!;
+    expect(r.intent).toEqual(['informational', 'commercial']);
+  });
+
+  it('extrait branded depuis colonne Branded', () => {
+    const skello = result.rows.find((row) => row.keyword === 'skello connexion')!;
+    expect(skello.branded).toBe(true);
+    const sirh = result.rows.find((row) => row.keyword === 'sirh')!;
+    expect(sirh.branded).toBe(false);
+  });
+
+  it('extrait traffic depuis colonne Traffic', () => {
+    const r = result.rows.find((row) => row.keyword === 'logiciel planning')!;
+    expect(r.traffic).toBe(1500);
+  });
+
+  it('extrait SERP features quand présent', () => {
+    const r = result.rows.find((row) => row.keyword === 'logiciel planning')!;
+    expect(r.serpFeatures).toBe('Featured snippet, People also ask');
+  });
+
+  it('SERP features null quand vide', () => {
+    const r = result.rows.find((row) => row.keyword === 'gestion des plannings')!;
+    expect(r.serpFeatures).toBe(null);
+  });
+});
+
+describe('parseCSVTextWithMapping — format inconnu', () => {
+  it('parse un CSV custom via mapping manuel', async () => {
+    const { parseCSVTextWithMapping } = await import('../index');
+    const csv = `MyKW,MyVol,MyPos
+planning rh,5400,3
+sirh,17000,12`;
+    const result = parseCSVTextWithMapping(csv, {
+      MyKW: 'keyword',
+      MyVol: 'volume',
+      MyPos: 'position',
+    });
+    expect(result.rows).toHaveLength(2);
+    expect(result.rows[0]!.keyword).toBe('planning rh');
+    expect(result.rows[0]!.volume).toBe(5400);
+    expect(result.rows[0]!.position).toBe(3);
+  });
+
+  it('ignore les colonnes mappées sur "ignore"', async () => {
+    const { parseCSVTextWithMapping } = await import('../index');
+    const csv = `kw,vol,bruit
+planning,1000,inutile`;
+    const result = parseCSVTextWithMapping(csv, {
+      kw: 'keyword',
+      vol: 'volume',
+      bruit: 'ignore',
+    });
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]!.keyword).toBe('planning');
+  });
+});
+
+describe('hashHeaders', () => {
+  it('produit un hash stable indépendant de l\'ordre/casse', async () => {
+    const { hashHeaders } = await import('../index');
+    const h1 = await hashHeaders(['Keyword', 'Volume', 'KD']);
+    const h2 = await hashHeaders(['volume', 'kd', 'keyword']);
+    expect(h1).toBe(h2);
+  });
+
+  it('produit un hash différent pour des headers différents', async () => {
+    const { hashHeaders } = await import('../index');
+    const h1 = await hashHeaders(['Keyword', 'Volume']);
+    const h2 = await hashHeaders(['Keyword', 'Volume', 'KD']);
+    expect(h1).not.toBe(h2);
+  });
+});
+
 describe('parseCSVText — forceFormat override', () => {
   it('respects forceFormat option', () => {
     const text = 'Keyword,Volume\nfoo,100\n';

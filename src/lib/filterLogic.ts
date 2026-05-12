@@ -33,6 +33,7 @@ export function isKeywordVisible(node: KeywordNode, f: FilterState): boolean {
     if (!f.activeClusters.includes(node.clusterId)) return false;
   }
   if (f.hideDatedKeywords && containsPastYear(node.keyword)) return false;
+  if (f.hideBranded && node.branded) return false;
   if (f.positionRange) {
     const sources =
       f.activeSites !== null

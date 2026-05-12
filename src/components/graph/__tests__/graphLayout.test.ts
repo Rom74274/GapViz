@@ -319,6 +319,9 @@ describe('isClickable', () => {
       sources: [],
       isGap: false,
       primaryColor: '#000000',
+      branded: false,
+      traffic: null,
+      serpFeatures: null,
     };
     expect(isClickable(k)).toBe(true);
   });

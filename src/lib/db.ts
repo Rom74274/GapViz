@@ -32,6 +32,9 @@ export interface Keyword {
   sourceDomain: string;
   position: number | null;
   url: string | null;
+  traffic?: number | null;
+  serpFeatures?: string | null;
+  branded?: boolean | null;
 }
 
 export interface Cluster {
@@ -50,12 +53,34 @@ export interface ClusterCacheEntry {
   createdAt: number;
 }
 
+export type GapVizField =
+  | 'keyword'
+  | 'volume'
+  | 'position'
+  | 'kd'
+  | 'cpc'
+  | 'url'
+  | 'intent'
+  | 'traffic'
+  | 'branded'
+  | 'serpFeatures'
+  | 'ignore';
+
+export interface ParseMapping {
+  id: string;
+  label: string;
+  headerSignature: string; // hash SHA-256 des headers triés
+  mapping: Record<string, GapVizField>;
+  createdAt: number;
+}
+
 class GapVizDB extends Dexie {
   projects!: EntityTable<Project, 'id'>;
   competitors!: EntityTable<Competitor, 'id'>;
   keywords!: EntityTable<Keyword, 'id'>;
   clusters!: EntityTable<Cluster, 'id'>;
   clusterCache!: EntityTable<ClusterCacheEntry, 'hash'>;
+  parseMappings!: EntityTable<ParseMapping, 'id'>;
 
   constructor() {
     super('GapViz');
@@ -65,6 +90,14 @@ class GapVizDB extends Dexie {
       keywords: 'id, projectId, keyword, clusterId, sourceDomain',
       clusters: 'id, projectId, parentId, name',
       clusterCache: 'hash, projectId, createdAt',
+    });
+    this.version(2).stores({
+      projects: 'id, name, createdAt',
+      competitors: 'id, projectId, domain',
+      keywords: 'id, projectId, keyword, clusterId, sourceDomain',
+      clusters: 'id, projectId, parentId, name',
+      clusterCache: 'hash, projectId, createdAt',
+      parseMappings: 'id, headerSignature, createdAt',
     });
   }
 }

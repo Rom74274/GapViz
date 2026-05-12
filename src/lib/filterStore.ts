@@ -14,6 +14,7 @@ export interface FilterState {
   positionRange: [number, number] | null;
   gapOnly: boolean;
   hideDatedKeywords: boolean;            // masque les KWs contenant une année passée
+  hideBranded: boolean;                  // masque les KWs flaggés branded par Ahrefs
 }
 
 export const DEFAULT_FILTERS: FilterState = {
@@ -26,6 +27,7 @@ export const DEFAULT_FILTERS: FilterState = {
   positionRange: null,
   gapOnly: false,
   hideDatedKeywords: false,
+  hideBranded: false,
 };
 
 interface FilterStore {
@@ -97,6 +99,7 @@ export function isAnyFilterActive(f: FilterState): boolean {
     f.kdRange !== null ||
     f.positionRange !== null ||
     f.gapOnly ||
-    f.hideDatedKeywords
+    f.hideDatedKeywords ||
+    f.hideBranded
   );
 }

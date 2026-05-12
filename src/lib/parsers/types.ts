@@ -10,6 +10,9 @@ export interface ParsedRow {
   cpc: number | null;
   intent: Intent[];
   url: string | null;
+  traffic?: number | null;
+  serpFeatures?: string | null;
+  branded?: boolean | null;
 }
 
 export interface ParseError {

@@ -115,6 +115,9 @@ export function NewProjectPage() {
               sourceDomain: site.domain.trim(),
               position: row.position,
               url: row.url,
+              traffic: row.traffic ?? null,
+              serpFeatures: row.serpFeatures ?? null,
+              branded: row.branded ?? null,
             }));
             await db.keywords.bulkAdd(keywords);
           }
