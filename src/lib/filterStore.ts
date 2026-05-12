@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Intent } from '@/lib/db';
@@ -42,7 +43,11 @@ export const useFilterStore = create<FilterStore>()(
           byProject: {
             ...s.byProject,
             [projectId]: {
-              ...(s.byProject[projectId] ?? DEFAULT_FILTERS),
+              // Toujours partir des defaults pour garantir que tous les champs
+              // sont présents — utile quand on ajoute de nouveaux filtres
+              // après une persistance précédente.
+              ...DEFAULT_FILTERS,
+              ...(s.byProject[projectId] ?? {}),
               ...patch,
             },
           },
@@ -52,12 +57,34 @@ export const useFilterStore = create<FilterStore>()(
           byProject: { ...s.byProject, [projectId]: { ...DEFAULT_FILTERS } },
         })),
     }),
-    { name: 'gapviz-filters' },
+    {
+      name: 'gapviz-filters',
+      version: 2,
+      // Backwards-compat : si l'utilisateur a une version persistée plus
+      // ancienne (sans excludedClusters / hideDatedKeywords), on enrichit
+      // chaque entrée avec les defaults.
+      migrate: (state) => {
+        if (typeof state !== 'object' || state === null) return state;
+        const s = state as { byProject?: Record<string, Partial<FilterState>> };
+        if (s.byProject) {
+          for (const id of Object.keys(s.byProject)) {
+            s.byProject[id] = { ...DEFAULT_FILTERS, ...s.byProject[id] };
+          }
+        }
+        return state;
+      },
+    },
   ),
 );
 
 export function useProjectFilters(projectId: string): FilterState {
-  return useFilterStore((s) => s.byProject[projectId] ?? DEFAULT_FILTERS);
+  const raw = useFilterStore((s) => s.byProject[projectId]);
+  return useMemo(() => {
+    if (!raw) return DEFAULT_FILTERS;
+    // Merge avec les defaults pour absorber tout champ manquant (état
+    // persisté pré-migration ou champs ajoutés à FilterState).
+    return { ...DEFAULT_FILTERS, ...raw };
+  }, [raw]);
 }
 
 export function isAnyFilterActive(f: FilterState): boolean {
