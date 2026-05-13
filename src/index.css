@@ -20,3 +20,24 @@
     box-sizing: border-box;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Starfield twinkle — animation CSS pure (pas de RAF), portée par chaque
+   étoile via la variable --gv-star-op (opacité de base).
+   --------------------------------------------------------------------------- */
+@keyframes gv-twinkle {
+  0%,
+  100% {
+    opacity: var(--gv-star-op, 0.3);
+  }
+  50% {
+    opacity: calc(var(--gv-star-op, 0.3) * 2.2);
+  }
+}
+
+.gv-twinkle {
+  animation-name: gv-twinkle;
+  animation-iteration-count: infinite;
+  animation-timing-function: ease-in-out;
+  will-change: opacity;
+}

@@ -1,7 +1,6 @@
-import { HashRouter, Routes, Route } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Layout } from '@/components/Layout';
 import { HomePage } from '@/pages/HomePage';
-import { ProjectsPage } from '@/pages/ProjectsPage';
 import { NewProjectPage } from '@/pages/NewProjectPage';
 import { ProjectDetailPage } from '@/pages/ProjectDetailPage';
 import { SettingsPage } from '@/pages/SettingsPage';
@@ -13,7 +12,8 @@ function App() {
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<HomePage />} />
-          <Route path="projects" element={<ProjectsPage />} />
+          {/* L'index est désormais le dashboard projets, /projects redirige. */}
+          <Route path="projects" element={<Navigate to="/" replace />} />
           <Route path="projects/new" element={<NewProjectPage />} />
           <Route path="projects/:projectId" element={<ProjectDetailPage />} />
           <Route path="settings" element={<SettingsPage />} />

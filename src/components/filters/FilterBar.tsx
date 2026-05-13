@@ -2,19 +2,20 @@ import { useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   ChevronDown,
-  Sparkles,
+  Star,
   Users,
   TrendingUp,
   Gauge,
   Tag,
-  Layers,
-  Crosshair,
+  LayoutGrid,
+  Hash,
   RotateCcw,
   AlertTriangle,
   CalendarOff,
   EyeOff,
   RotateCw,
   Award,
+  Crosshair,
 } from 'lucide-react';
 import { db, type Intent } from '@/lib/db';
 import {
@@ -54,7 +55,6 @@ export function FilterBar({
   onZoomToCluster,
   selectedIds,
 }: Props) {
-  const visibleKwCount = visibleKws.length;
   const filters = useProjectFilters(projectId);
   const patch = useFilterStore((s) => s.patch);
   const reset = useFilterStore((s) => s.reset);
@@ -75,13 +75,20 @@ export function FilterBar({
   const allDomains = useMemo(() => competitors?.map((c) => c.domain) ?? [], [competitors]);
   const allClusterIds = useMemo(() => clusters?.map((c) => c.id) ?? [], [clusters]);
 
-  const update = (p: Partial<FilterState>) => patch(projectId, p);
+  const maxVol = useMemo(() => {
+    if (!keywords || keywords.length === 0) return 100;
+    return Math.max(100, ...keywords.map((k) => k.volume));
+  }, [keywords]);
 
+  const update = (p: Partial<FilterState>) => patch(projectId, p);
   const active = isAnyFilterActive(filters);
+  const visibleKwCount = visibleKws.length;
+  const visiblePct = totalKwCount > 0 ? (visibleKwCount / totalKwCount) * 100 : 0;
 
   return (
-    <div className="relative z-20 border-b border-border-subtle bg-bg-surface/60 px-3 py-2 backdrop-blur">
-      <div className="flex flex-wrap items-center gap-1.5">
+    <div className="relative z-20 border-b border-border-subtle bg-bg-surface/30 px-4 py-2.5 backdrop-blur-md">
+      <div className="flex flex-wrap items-center gap-2">
+        {/* PRIMARY FILTERS */}
         <ConcurrentFilter
           allDomains={allDomains}
           competitors={competitors ?? []}
@@ -89,6 +96,7 @@ export function FilterBar({
           onChange={(activeSites) => update({ activeSites })}
         />
         <VolumeFilter
+          maxVol={maxVol}
           keywords={keywords ?? []}
           value={filters.volumeRange}
           onChange={(volumeRange) => update({ volumeRange })}
@@ -100,18 +108,6 @@ export function FilterBar({
         <IntentFilter
           value={filters.intents}
           onChange={(intents) => update({ intents })}
-        />
-        <GapToggle
-          active={filters.gapOnly}
-          onClick={() => update({ gapOnly: !filters.gapOnly })}
-        />
-        <DateToggle
-          active={filters.hideDatedKeywords}
-          onClick={() => update({ hideDatedKeywords: !filters.hideDatedKeywords })}
-        />
-        <BrandedToggle
-          active={filters.hideBranded}
-          onClick={() => update({ hideBranded: !filters.hideBranded })}
         />
         <ClusterFilter
           allClusterIds={allClusterIds}
@@ -129,32 +125,47 @@ export function FilterBar({
           onChange={(positionRange) => update({ positionRange })}
         />
 
-        <div className="mx-1 h-5 w-px bg-border-subtle" />
+        {/* OPPORTUNITES — HERO FILTER */}
+        <OpportunitiesToggle
+          active={filters.gapOnly}
+          onClick={() => update({ gapOnly: !filters.gapOnly })}
+        />
 
-        <span className="px-2 py-0.5 font-mono text-[11px] text-text-secondary">
-          <span
-            className={cn(
-              visibleKwCount < totalKwCount ? 'text-amber-300' : 'text-text-primary',
-            )}
-          >
-            {visibleKwCount}
-          </span>
-          <span className="text-text-muted"> / {totalKwCount} KWs</span>
-        </span>
+        {/* SECONDARY GROUP */}
+        <span className="mx-1 h-6 w-px self-stretch bg-border-subtle/60" />
+        <SmallToggle
+          icon={<CalendarOff size={11} />}
+          label="KWs datés"
+          active={filters.hideDatedKeywords}
+          title="Masque les mots-clés contenant une année passée"
+          onClick={() => update({ hideDatedKeywords: !filters.hideDatedKeywords })}
+        />
+        <SmallToggle
+          icon={<Award size={11} />}
+          label="Branded"
+          active={filters.hideBranded}
+          title="Masque les mots-clés flaggés branded par Ahrefs"
+          onClick={() => update({ hideBranded: !filters.hideBranded })}
+        />
 
-        {active && (
-          <button
-            type="button"
-            onClick={() => reset(projectId)}
-            title="Reset filtres"
-            className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] text-text-muted hover:bg-bg-elevated hover:text-text-primary"
-          >
-            <RotateCcw size={11} />
-            Reset
-          </button>
-        )}
-
-        <div className="ml-auto">
+        {/* COUNTER + RESET + EXPORT — pushed right */}
+        <div className="ml-auto flex items-center gap-2">
+          <KwCounter
+            visible={visibleKwCount}
+            total={totalKwCount}
+            pct={visiblePct}
+            filtered={active}
+          />
+          {active && (
+            <button
+              type="button"
+              onClick={() => reset(projectId)}
+              title="Reset tous les filtres"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-text-muted hover:bg-bg-elevated hover:text-text-primary"
+            >
+              <RotateCcw size={12} />
+            </button>
+          )}
           <ExportButton
             visibleKws={visibleKws}
             projectName={projectName}
@@ -168,18 +179,59 @@ export function FilterBar({
 }
 
 // ============================================================================
-// Filter button trigger
+// Compteur KW avec progress bar
+// ============================================================================
+
+function KwCounter({
+  visible,
+  total,
+  pct,
+  filtered,
+}: {
+  visible: number;
+  total: number;
+  pct: number;
+  filtered: boolean;
+}) {
+  return (
+    <div className="flex flex-col items-end gap-1 pr-1">
+      <span className="text-xs leading-none">
+        <span
+          className={cn(
+            'font-semibold tabular-nums',
+            filtered ? 'text-amber-300' : 'text-text-primary',
+          )}
+        >
+          {visible.toLocaleString('fr-FR')}
+        </span>
+        <span className="text-text-muted"> / {total.toLocaleString('fr-FR')} KWs</span>
+      </span>
+      <div className="h-0.5 w-28 overflow-hidden rounded-full bg-bg-elevated">
+        <div
+          className={cn(
+            'h-full rounded-full transition-all duration-300',
+            filtered ? 'bg-amber-400' : 'bg-accent',
+          )}
+          style={{ width: `${Math.max(2, Math.min(100, pct))}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// FilterButton — bouton générique avec icône, label, valeur active optionnelle
 // ============================================================================
 
 function FilterButton({
   active,
-  badge,
+  activeValue,
   icon,
   children,
   onClick,
 }: {
   active: boolean;
-  badge?: string;
+  activeValue?: string;
   icon: React.ReactNode;
   children: React.ReactNode;
   onClick: () => void;
@@ -189,24 +241,110 @@ function FilterButton({
       type="button"
       onClick={onClick}
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+        'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-all',
         active
-          ? 'border-accent/60 bg-accent/15 text-accent'
-          : 'border-border-subtle bg-bg-base/40 text-text-secondary hover:border-border-strong hover:text-text-primary',
+          ? 'border-accent/40 bg-accent/10 text-accent shadow-[inset_0_0_0_1px_rgba(99,102,241,0.15)]'
+          : 'border-border-subtle/60 bg-bg-base/30 text-text-secondary backdrop-blur hover:border-border-strong/60 hover:bg-bg-elevated/50 hover:text-text-primary',
       )}
     >
-      <span className={cn(active ? 'text-accent' : 'text-text-muted')}>{icon}</span>
-      {children}
-      {badge && (
-        <span className="font-mono text-[10px] opacity-80">{badge}</span>
+      <span className={cn('shrink-0', active ? 'text-accent' : 'text-text-muted')}>
+        {icon}
+      </span>
+      <span>{children}</span>
+      {active && activeValue && (
+        <span className="ml-0.5 rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-accent">
+          {activeValue}
+        </span>
       )}
-      <ChevronDown size={11} className="opacity-60" />
+      <ChevronDown size={11} className={cn('opacity-50', active && 'opacity-70')} />
     </button>
   );
 }
 
 // ============================================================================
-// 1. Concurrents
+// SmallToggle — pour les filtres secondaires (KWs datés, Branded)
+// ============================================================================
+
+function SmallToggle({
+  icon,
+  label,
+  active,
+  title,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  active: boolean;
+  title?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] transition-all',
+        active
+          ? 'border-accent/40 bg-accent/10 text-accent'
+          : 'border-border-subtle/40 bg-transparent text-text-muted hover:border-border-strong/50 hover:text-text-secondary',
+      )}
+    >
+      <span className="shrink-0">{icon}</span>
+      {label}
+    </button>
+  );
+}
+
+// ============================================================================
+// Opportunités — HERO filter
+// ============================================================================
+
+function OpportunitiesToggle({
+  active,
+  onClick,
+}: {
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="N'afficher que les mots-clés où tu n'es PAS positionné — la vraie opportunité"
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all',
+        active
+          ? 'border border-amber-300 bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-[0_0_18px_-2px_rgba(251,191,36,0.55)] hover:from-amber-400 hover:to-orange-400'
+          : 'border border-amber-400/30 bg-amber-500/5 text-amber-300 hover:border-amber-400/60 hover:bg-amber-500/10',
+      )}
+    >
+      <Star
+        size={12}
+        className={active ? 'fill-white text-white' : 'text-amber-300'}
+      />
+      Opportunités
+    </button>
+  );
+}
+
+// ============================================================================
+// Helpers — formattage de valeurs actives sur les boutons
+// ============================================================================
+
+function formatK(n: number): string {
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+  if (n >= 1000) return `${Math.round(n / 100) / 10}K`;
+  return n.toString();
+}
+
+function formatRange(r: [number, number] | null, suffix = ''): string | undefined {
+  if (!r) return undefined;
+  return `${formatK(r[0])}–${formatK(r[1])}${suffix}`;
+}
+
+// ============================================================================
+// Filtres individuels
 // ============================================================================
 
 function ConcurrentFilter({
@@ -242,7 +380,7 @@ function ConcurrentFilter({
       trigger={
         <FilterButton
           active={active}
-          badge={`${activeCount}/${total}`}
+          activeValue={`${activeCount}/${total}`}
           icon={<Users size={12} />}
           onClick={() => setOpen((v) => !v)}
         >
@@ -289,7 +427,7 @@ function ConcurrentFilter({
                   style={{ backgroundColor: c.color }}
                 />
                 <span
-                  className={cn('flex-1 truncate text-xs', c.isMe ? 'font-semibold' : '')}
+                  className={cn('flex-1 truncate text-xs', c.isMe && 'font-semibold')}
                 >
                   {c.label}
                 </span>
@@ -307,21 +445,18 @@ function ConcurrentFilter({
   );
 }
 
-// ============================================================================
-// 2. Volume
-// ============================================================================
-
 function VolumeFilter({
+  maxVol,
   keywords,
   value,
   onChange,
 }: {
+  maxVol: number;
   keywords: { volume: number }[];
   value: [number, number] | null;
   onChange: (v: [number, number] | null) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const maxVol = Math.max(100, ...keywords.map((k) => k.volume));
   const range: [number, number] = value ?? [0, maxVol];
 
   const presetTopN = (n: number) => {
@@ -338,6 +473,7 @@ function VolumeFilter({
       trigger={
         <FilterButton
           active={value !== null}
+          activeValue={formatRange(value)}
           icon={<TrendingUp size={12} />}
           onClick={() => setOpen((v) => !v)}
         >
@@ -367,10 +503,6 @@ function VolumeFilter({
   );
 }
 
-// ============================================================================
-// 3. KD
-// ============================================================================
-
 function KDFilter({
   value,
   onChange,
@@ -387,6 +519,7 @@ function KDFilter({
       trigger={
         <FilterButton
           active={value !== null}
+          activeValue={value ? `${value[0]}–${value[1]}` : undefined}
           icon={<Gauge size={12} />}
           onClick={() => setOpen((v) => !v)}
         >
@@ -415,10 +548,6 @@ function KDFilter({
   );
 }
 
-// ============================================================================
-// 4. Intent
-// ============================================================================
-
 function IntentFilter({
   value,
   onChange,
@@ -442,7 +571,7 @@ function IntentFilter({
       trigger={
         <FilterButton
           active={value !== null}
-          badge={value !== null ? `${value.length}/4` : undefined}
+          activeValue={value !== null ? `${value.length}/4` : undefined}
           icon={<Tag size={12} />}
           onClick={() => setOpen((v) => !v)}
         >
@@ -478,70 +607,6 @@ function IntentFilter({
     </Popover>
   );
 }
-
-// ============================================================================
-// 5. Gap only (toggle direct)
-// ============================================================================
-
-function GapToggle({ active, onClick }: { active: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
-        active
-          ? 'border-amber-400/70 bg-amber-500/15 text-amber-300 shadow-[0_0_12px_-2px_rgba(251,191,36,0.5)]'
-          : 'border-border-subtle bg-bg-base/40 text-text-secondary hover:border-border-strong hover:text-text-primary',
-      )}
-    >
-      <Sparkles size={12} />
-      Opportunités
-    </button>
-  );
-}
-
-function DateToggle({ active, onClick }: { active: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title="Masque les mots-clés contenant une année passée (ex : 'salaire 2024')"
-      className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
-        active
-          ? 'border-accent/60 bg-accent/15 text-accent'
-          : 'border-border-subtle bg-bg-base/40 text-text-secondary hover:border-border-strong hover:text-text-primary',
-      )}
-    >
-      <CalendarOff size={12} />
-      KWs datés
-    </button>
-  );
-}
-
-function BrandedToggle({ active, onClick }: { active: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title="Masque les mots-clés flaggés branded par Ahrefs"
-      className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
-        active
-          ? 'border-accent/60 bg-accent/15 text-accent'
-          : 'border-border-subtle bg-bg-base/40 text-text-secondary hover:border-border-strong hover:text-text-primary',
-      )}
-    >
-      <Award size={12} />
-      Branded
-    </button>
-  );
-}
-
-// ============================================================================
-// 6. Cluster
-// ============================================================================
 
 function ClusterFilter({
   allClusterIds,
@@ -601,6 +666,13 @@ function ClusterFilter({
     else onChange(next);
   };
 
+  const isActive = value !== null || excluded.length > 0;
+  const activeValue = excluded.length > 0
+    ? `${value !== null ? value.length : allClusterIds.length - excluded.length}/${allClusterIds.length} · ${excluded.length} excl.`
+    : value !== null
+      ? `${value.length}/${allClusterIds.length}`
+      : undefined;
+
   return (
     <Popover
       open={open}
@@ -608,15 +680,9 @@ function ClusterFilter({
       className="w-[320px]"
       trigger={
         <FilterButton
-          active={value !== null || excluded.length > 0}
-          icon={<Layers size={12} />}
-          badge={
-            excluded.length > 0
-              ? `${value !== null ? value.length : allClusterIds.length - excluded.length}/${allClusterIds.length} · ${excluded.length} exclu${excluded.length > 1 ? 's' : ''}`
-              : value !== null
-                ? `${value.length}/${allClusterIds.length}`
-                : undefined
-          }
+          active={isActive}
+          activeValue={activeValue}
+          icon={<LayoutGrid size={12} />}
           onClick={() => setOpen((v) => !v)}
         >
           Clusters
@@ -727,10 +793,6 @@ function ClusterFilter({
   );
 }
 
-// ============================================================================
-// 7. Position
-// ============================================================================
-
 function PositionFilter({
   value,
   onChange,
@@ -747,7 +809,8 @@ function PositionFilter({
       trigger={
         <FilterButton
           active={value !== null}
-          icon={<Crosshair size={12} />}
+          activeValue={value ? `${value[0]}–${value[1]}` : undefined}
+          icon={<Hash size={12} />}
           onClick={() => setOpen((v) => !v)}
         >
           Position
@@ -774,10 +837,6 @@ function PositionFilter({
   );
 }
 
-// ============================================================================
-// Bits
-// ============================================================================
-
 function Preset({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
   return (
     <button
@@ -790,5 +849,4 @@ function Preset({ children, onClick }: { children: React.ReactNode; onClick: () 
   );
 }
 
-// Réexports utilitaires (au cas où on en a besoin dans le test).
 export { DEFAULT_FILTERS };

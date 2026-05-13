@@ -1,11 +1,10 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { Network, FolderKanban, Settings } from 'lucide-react';
+import { FolderKanban, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Starfield } from './Starfield';
 
 const navItems = [
-  { to: '/', label: 'Accueil', icon: Network, end: true },
-  { to: '/projects', label: 'Projets', icon: FolderKanban, end: false },
+  { to: '/', label: 'Projets', icon: FolderKanban, end: true },
   { to: '/settings', label: 'Réglages', icon: Settings, end: false },
 ];
 
