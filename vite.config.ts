@@ -29,6 +29,13 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
+        // Active la nouvelle version du SW dès qu'elle est téléchargée,
+        // sans attendre que toutes les fenêtres ouvertes soient fermées.
+        // Sinon l'utilisateur voit l'ancienne UI malgré le déploiement.
+        skipWaiting: true,
+        clientsClaim: true,
+        // Nettoie les anciennes caches au passage.
+        cleanupOutdatedCaches: true,
       },
     }),
   ],
