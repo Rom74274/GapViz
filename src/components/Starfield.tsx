@@ -18,13 +18,14 @@ interface Props {
 }
 
 export function Starfield({
-  starCount = 350,
-  twinkleCount = 40,
+  starCount = 500,
+  twinkleCount = 60,
   parallaxFactor = 0.06,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const starsRef = useRef<Star[]>([]);
   const sizeRef = useRef({ w: 0, h: 0 });
+  const firstDrawRef = useRef(false);
 
   // Génère les étoiles une seule fois.
   useEffect(() => {
@@ -33,14 +34,15 @@ export function Starfield({
       stars.push({
         x: Math.random(),
         y: Math.random(),
-        r: 0.6 + Math.random() * 1.6,
-        baseOpacity: 0.12 + Math.random() * 0.25, // 12-37%, plus visible
+        r: 0.8 + Math.random() * 2.0, // 0.8 à 2.8 px
+        baseOpacity: 0.25 + Math.random() * 0.4, // 25–65 % blanc — clairement visible
         twinkles: i < twinkleCount,
         phase: Math.random() * Math.PI * 2,
         speed: 0.6 + Math.random() * 0.8,
       });
     }
     starsRef.current = stars;
+    firstDrawRef.current = false;
     console.log(`[Starfield] mounted with ${stars.length} stars (${twinkleCount} twinkle)`);
   }, [starCount, twinkleCount]);
 
@@ -97,7 +99,6 @@ export function Starfield({
         const sy = mod(star.y * h + offsetY, h);
         let opacity = star.baseOpacity;
         if (star.twinkles) {
-          // Oscille entre 30% et 100% de l'opacité de base, période ~3–7 sec.
           const t01 = 0.5 + 0.5 * Math.sin(now / (3000 * star.speed) + star.phase);
           opacity = star.baseOpacity * (0.3 + 0.7 * t01);
         }
@@ -108,6 +109,15 @@ export function Starfield({
       }
 
       ctx.restore();
+
+      if (!firstDrawRef.current) {
+        firstDrawRef.current = true;
+        const first = starsRef.current[0];
+        console.log(
+          `[Starfield] first draw @ ${w}×${h} dpr=${dpr} firstStar=`,
+          first ? `(${(first.x * w).toFixed(0)}, ${(first.y * h).toFixed(0)}) r=${first.r.toFixed(1)} op=${first.baseOpacity.toFixed(2)}` : 'none',
+        );
+      }
       raf = requestAnimationFrame(draw);
     };
     raf = requestAnimationFrame(draw);
