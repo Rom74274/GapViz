@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import { Network, FolderKanban, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Starfield } from './Starfield';
 
 const navItems = [
   { to: '/', label: 'Accueil', icon: Network, end: true },
@@ -10,8 +11,9 @@ const navItems = [
 
 export function Layout() {
   return (
-    <div className="flex h-full flex-col">
-      <header className="flex items-center justify-between border-b border-border-subtle bg-bg-surface px-6 py-3">
+    <div className="relative flex h-full flex-col">
+      <Starfield />
+      <header className="relative z-10 flex items-center justify-between border-b border-border-subtle bg-bg-surface px-6 py-3">
         <div className="flex items-center gap-3">
           <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-7 w-7" />
           <span className="font-semibold tracking-tight">GapViz</span>
@@ -38,7 +40,7 @@ export function Layout() {
           ))}
         </nav>
       </header>
-      <main className="flex-1 overflow-auto">
+      <main className="relative z-10 flex-1 overflow-auto">
         <Outlet />
       </main>
     </div>

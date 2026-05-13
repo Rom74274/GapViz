@@ -22,6 +22,7 @@ import { GraphToolbar } from './GraphToolbar';
 import { SearchBar } from './SearchBar';
 import { useProjectFilters } from '@/lib/filterStore';
 import { computeNodeVisibility } from '@/lib/filterLogic';
+import { globalTransformRef } from '@/lib/transformRef';
 
 interface Props {
   projectId: string;
@@ -386,11 +387,15 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
       })
       .on('zoom', (event) => {
         transformRef.current = event.transform;
+        // Synchronise la ref globale pour le parallax du Starfield.
+        globalTransformRef.current = event.transform;
       });
     zoomRef.current = zoom;
     selection.call(zoom);
+    globalTransformRef.current = d3.zoomIdentity;
     return () => {
       selection.on('.zoom', null);
+      globalTransformRef.current = d3.zoomIdentity;
     };
   }, []);
 
@@ -570,7 +575,12 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
     <div
       ref={containerRef}
       className="relative h-full w-full overflow-hidden"
-      style={{ background: 'radial-gradient(ellipse at center, #0f0f2e 0%, #0a0a1a 70%)' }}
+      style={{
+        // Vignette légère au centre, transparente en bord pour laisser les
+        // étoiles du Starfield apparaître.
+        background:
+          'radial-gradient(ellipse at center, rgba(15, 15, 46, 0.55) 0%, rgba(15, 15, 46, 0.15) 45%, transparent 80%)',
+      }}
     >
       <DotGrid />
       <canvas ref={canvasRef} className="block" style={{ cursor: 'grab' }} />
@@ -833,9 +843,9 @@ function drawAmbientHalo(ctx: CanvasRenderingContext2D, n: GraphNode, alpha: num
         ? n.color
         : '#9aa0ff';
   const inner = n.radius;
-  const outer = n.radius + 4;
+  const outer = n.radius + 3;
   const grad = ctx.createRadialGradient(n.x, n.y, inner, n.x, n.y, outer);
-  grad.addColorStop(0, withAlpha(color, 0.14 * alpha));
+  grad.addColorStop(0, withAlpha(color, 0.08 * alpha));
   grad.addColorStop(1, withAlpha(color, 0));
   ctx.fillStyle = grad;
   ctx.beginPath();
@@ -848,8 +858,8 @@ function drawGapGlow(ctx: CanvasRenderingContext2D, n: KeywordNode, alpha: numbe
   const inner = n.radius;
   const outer = n.radius * 2.6 + 2;
   const grad = ctx.createRadialGradient(n.x, n.y, inner, n.x, n.y, outer);
-  grad.addColorStop(0, withAlpha(n.primaryColor, 0.55 * alpha));
-  grad.addColorStop(0.6, withAlpha(n.primaryColor, 0.18 * alpha));
+  grad.addColorStop(0, withAlpha(n.primaryColor, 0.35 * alpha));
+  grad.addColorStop(0.55, withAlpha(n.primaryColor, 0.12 * alpha));
   grad.addColorStop(1, withAlpha(n.primaryColor, 0));
   ctx.fillStyle = grad;
   ctx.beginPath();
@@ -921,13 +931,29 @@ function drawCenter(
   if (n.x === undefined || n.y === undefined) return;
   ctx.globalAlpha = s.fade;
   const r = n.radius * s.breathing;
-  const grad = ctx.createRadialGradient(n.x, n.y, r, n.x, n.y, r * 2.4);
+  const now = performance.now();
+
+  // Halo externe pulsant (4 sec, 15-25% opacité) — donne vie au centre.
+  const pulse = 0.20 + 0.05 * Math.sin((2 * Math.PI * now) / 4000);
+  const outerR = r * 3.6;
+  const outerGrad = ctx.createRadialGradient(n.x, n.y, r * 2, n.x, n.y, outerR);
+  outerGrad.addColorStop(0, withAlpha(n.color, pulse));
+  outerGrad.addColorStop(1, withAlpha(n.color, 0));
+  ctx.fillStyle = outerGrad;
+  ctx.beginPath();
+  ctx.arc(n.x, n.y, outerR, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Halo interne statique (intense, focus).
+  const innerR = r * 2.4;
+  const grad = ctx.createRadialGradient(n.x, n.y, r, n.x, n.y, innerR);
   grad.addColorStop(0, withAlpha(n.color, 0.55));
   grad.addColorStop(1, withAlpha(n.color, 0));
   ctx.fillStyle = grad;
   ctx.beginPath();
-  ctx.arc(n.x, n.y, r * 2.4, 0, Math.PI * 2);
+  ctx.arc(n.x, n.y, innerR, 0, Math.PI * 2);
   ctx.fill();
+
   ctx.beginPath();
   ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
   ctx.fillStyle = n.color;
