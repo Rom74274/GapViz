@@ -21,7 +21,10 @@ export function isKeywordVisible(node: KeywordNode, f: FilterState): boolean {
     if (node.kd === null) return false;
     if (node.kd < f.kdRange[0] || node.kd > f.kdRange[1]) return false;
   }
-  if (f.intents !== null) {
+  if (f.intents !== null && node.intent.length > 0) {
+    // Important : un KW sans intent passe le filtre (cas typique d'un CSV
+    // sans colonne intent). Seuls les KWs avec un intent connu qui ne match
+    // pas sont exclus.
     const allowed = f.intents;
     if (!node.intent.some((i) => allowed.includes(i))) return false;
   }

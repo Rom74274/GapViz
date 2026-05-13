@@ -204,6 +204,59 @@ describe('parseCSVText — Ahrefs avec colonne "Intents" pluriel', () => {
   });
 });
 
+describe('parseCSVText — vrai export Ahrefs (format réel utilisateur)', () => {
+  // Format exact constaté en mai 2026 : colonnes intent sans préfixe "Is ",
+  // colonnes additionnelles (Traffic %, Country, Local, Entities, etc.),
+  // valeurs string "true"/"false" (pas booléens natifs).
+  const text = fixture('ahrefs.real-export.csv');
+  const result = parseCSVText(text);
+
+  it('détecte Ahrefs', () => {
+    expect(result.format).toBe('ahrefs');
+  });
+
+  it('parse les 5 lignes', () => {
+    expect(result.rows).toHaveLength(5);
+  });
+
+  it('extrait Informational depuis la colonne "Informational" (sans préfixe Is)', () => {
+    const r = result.rows.find((row) => row.keyword === 'sirh')!;
+    expect(r.intent).toEqual(['informational']);
+  });
+
+  it('extrait Commercial sur "logiciel planning"', () => {
+    const r = result.rows.find((row) => row.keyword === 'logiciel planning')!;
+    expect(r.intent).toEqual(['commercial']);
+  });
+
+  it('extrait plusieurs intents (Commercial + Transactional)', () => {
+    const r = result.rows.find((row) => row.keyword === 'acheter logiciel')!;
+    expect(r.intent).toEqual(['commercial', 'transactional']);
+  });
+
+  it('extrait Navigational et Branded (TRUE majuscules)', () => {
+    const r = result.rows.find((row) => row.keyword === 'skello')!;
+    expect(r.intent).toEqual(['navigational']);
+    expect(r.branded).toBe(true);
+  });
+
+  it('retourne intent vide quand tous les 4 sont false', () => {
+    const r = result.rows.find((row) => row.keyword === 'no intent kw')!;
+    expect(r.intent).toEqual([]);
+  });
+
+  it('extrait Branded false explicitement', () => {
+    const r = result.rows.find((row) => row.keyword === 'sirh')!;
+    expect(r.branded).toBe(false);
+  });
+
+  it('extrait traffic et SERP features', () => {
+    const r = result.rows.find((row) => row.keyword === 'logiciel planning')!;
+    expect(r.traffic).toBe(1500);
+    expect(r.serpFeatures).toBe('Featured snippet');
+  });
+});
+
 describe('parseCSVText — Ahrefs avec colonnes intent SANS préfixe "Is "', () => {
   const text = fixture('ahrefs.unprefixed-intents.csv');
   const result = parseCSVText(text);

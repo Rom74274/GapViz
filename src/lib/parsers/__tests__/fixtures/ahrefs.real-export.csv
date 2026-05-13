@@ -1,0 +1,6 @@
+Keyword,Volume,KD,CPC,Current position,URL,Traffic,Traffic (%),Country,Location,Language,Entities,Branded,Local,Navigational,Informational,Commercial,Transactional,SERP features
+sirh,17000,45,2.5,28,https://www.skello.io/blog/sirh,120,2.5%,FR,France,fr,,false,false,false,true,false,false,People also ask
+logiciel planning,8100,42,2.50,3,https://www.skello.io/planning,1500,10%,FR,France,fr,,false,false,false,false,true,false,Featured snippet
+acheter logiciel,500,25,5.20,1,https://www.skello.io/rh,300,5%,FR,France,fr,,false,false,false,false,true,true,Shopping
+skello,1500,5,0.10,1,https://www.skello.io,1200,80%,FR,France,fr,,TRUE,false,true,false,false,false,Sitelinks
+no intent kw,200,10,1.00,15,https://example.com,10,1%,FR,France,fr,,false,false,false,false,false,false,

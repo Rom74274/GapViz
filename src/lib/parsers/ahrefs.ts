@@ -13,10 +13,22 @@ import {
 // - "Is Informational" (forme historique)
 // getCol est case-insensitive donc "INFORMATIONAL" et "informational" matchent aussi.
 const INTENT_BOOLEAN_COLS: Array<{ variants: string[]; intent: Intent }> = [
-  { variants: ['Informational', 'Is Informational'], intent: 'informational' },
-  { variants: ['Commercial', 'Is Commercial'], intent: 'commercial' },
-  { variants: ['Transactional', 'Is Transactional'], intent: 'transactional' },
-  { variants: ['Navigational', 'Is Navigational'], intent: 'navigational' },
+  {
+    variants: ['Informational', 'Is Informational', 'is_informational'],
+    intent: 'informational',
+  },
+  {
+    variants: ['Commercial', 'Is Commercial', 'is_commercial'],
+    intent: 'commercial',
+  },
+  {
+    variants: ['Transactional', 'Is Transactional', 'is_transactional'],
+    intent: 'transactional',
+  },
+  {
+    variants: ['Navigational', 'Is Navigational', 'is_navigational'],
+    intent: 'navigational',
+  },
 ];
 
 function intentFromBooleans(raw: Record<string, unknown>): Intent[] {

@@ -74,6 +74,32 @@ describe('isKeywordVisible — excludedClusters', () => {
   });
 });
 
+describe('isKeywordVisible — intents filter avec intent vide', () => {
+  it('un KW SANS intent passe le filtre intent (cas CSV sans colonne intent)', () => {
+    const node = kw({ intent: [] });
+    const f = { ...DEFAULT_FILTERS, intents: ['informational' as const] };
+    expect(isKeywordVisible(node, f)).toBe(true);
+  });
+
+  it('un KW avec intent qui MATCH le filtre passe', () => {
+    const node = kw({ intent: ['informational'] });
+    const f = { ...DEFAULT_FILTERS, intents: ['informational' as const] };
+    expect(isKeywordVisible(node, f)).toBe(true);
+  });
+
+  it('un KW avec intent qui NE MATCH PAS le filtre est exclu', () => {
+    const node = kw({ intent: ['commercial'] });
+    const f = { ...DEFAULT_FILTERS, intents: ['informational' as const] };
+    expect(isKeywordVisible(node, f)).toBe(false);
+  });
+
+  it('OR entre les intents du KW vs ceux du filtre', () => {
+    const node = kw({ intent: ['informational', 'commercial'] });
+    const f = { ...DEFAULT_FILTERS, intents: ['informational' as const] };
+    expect(isKeywordVisible(node, f)).toBe(true);
+  });
+});
+
 describe('isKeywordVisible — hideDatedKeywords', () => {
   it('masque un KW avec une année passée quand le toggle est on', () => {
     const node = kw({ keyword: 'rapport 2024' });

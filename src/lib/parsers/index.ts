@@ -78,6 +78,26 @@ export function parseCSVText(text: string, opts: ParseOptions = {}): ParseResult
     }
   });
 
+  // Diagnostic : aide à repérer un CSV où les colonnes intent ne sont pas
+  // extraites (typiquement un format Ahrefs nouveau qui aurait changé les
+  // noms de colonnes). Loggé uniquement si > 0 rows ET 0 intents.
+  if (rows.length > 0) {
+    const withIntent = rows.filter((r) => r.intent.length > 0).length;
+    const hasIntentCol = headers.some((h) =>
+      /informational|commercial|transactional|navigational|intent/i.test(h),
+    );
+    if (withIntent === 0 && hasIntentCol) {
+      console.warn(
+        `[parser] ${detected}: 0/${rows.length} rows have intent extracted, mais le CSV contient des colonnes intent.`,
+        { headers: headers.filter((h) => /informational|commercial|transactional|navigational|intent/i.test(h)) },
+      );
+    } else {
+      console.log(
+        `[parser] ${detected}: ${rows.length} rows, ${withIntent} avec intent`,
+      );
+    }
+  }
+
   return {
     format: detected,
     rows,
