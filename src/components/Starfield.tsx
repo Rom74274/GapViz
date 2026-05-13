@@ -19,7 +19,7 @@ interface Props {
 
 export function Starfield({
   starCount = 500,
-  twinkleCount = 30,
+  twinkleCount = 80,
   parallaxFactor = 0.06,
 }: Props) {
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -80,29 +80,34 @@ export function Starfield({
           inset: '-5%', // marge pour ne pas découvrir un bord lors du parallax
         }}
       >
-        {stars.map((s, i) => (
-          <span
-            key={i}
-            className={s.twinkles ? 'gv-twinkle' : undefined}
-            style={{
-              position: 'absolute',
-              left: `${s.x}%`,
-              top: `${s.y}%`,
-              width: `${s.r * 2}px`,
-              height: `${s.r * 2}px`,
-              borderRadius: '50%',
-              backgroundColor: 'white',
-              opacity: s.opacity,
-              ...(s.twinkles
-                ? ({
-                    animationDuration: `${s.duration}s`,
-                    animationDelay: `${s.delay}s`,
-                    ['--gv-star-op' as never]: String(s.opacity),
-                  } as React.CSSProperties)
-                : null),
-            }}
-          />
-        ))}
+        {stars.map((s, i) => {
+          const style: React.CSSProperties = {
+            position: 'absolute',
+            left: `${s.x}%`,
+            top: `${s.y}%`,
+            width: `${s.r * 2}px`,
+            height: `${s.r * 2}px`,
+            borderRadius: '50%',
+            backgroundColor: 'white',
+          };
+          if (s.twinkles) {
+            // Important : on NE met PAS d'opacity inline ici — l'animation
+            // CSS pilote 100% l'opacité via les keyframes. Sinon l'inline
+            // override l'animation dans certains browsers.
+            style.animationDuration = `${s.duration}s`;
+            style.animationDelay = `${s.delay}s`;
+            (style as Record<string, string | number>)['--gv-star-op'] = String(s.opacity);
+          } else {
+            style.opacity = s.opacity;
+          }
+          return (
+            <span
+              key={i}
+              className={s.twinkles ? 'gv-twinkle' : undefined}
+              style={style}
+            />
+          );
+        })}
       </div>
     </div>
   );

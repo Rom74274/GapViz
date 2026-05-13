@@ -28,10 +28,12 @@
 @keyframes gv-twinkle {
   0%,
   100% {
-    opacity: var(--gv-star-op, 0.3);
+    opacity: var(--gv-star-op, 0.25);
   }
   50% {
-    opacity: calc(var(--gv-star-op, 0.3) * 2.2);
+    /* peak proche du blanc pur pour que le scintillement soit clairement
+       perceptible, indépendamment de la base */
+    opacity: 0.95;
   }
 }
 
