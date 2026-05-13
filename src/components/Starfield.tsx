@@ -18,8 +18,8 @@ interface Props {
 }
 
 export function Starfield({
-  starCount = 220,
-  twinkleCount = 25,
+  starCount = 350,
+  twinkleCount = 40,
   parallaxFactor = 0.06,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -33,14 +33,15 @@ export function Starfield({
       stars.push({
         x: Math.random(),
         y: Math.random(),
-        r: 0.5 + Math.random() * 1.2,
-        baseOpacity: 0.05 + Math.random() * 0.1,
+        r: 0.6 + Math.random() * 1.6,
+        baseOpacity: 0.12 + Math.random() * 0.25, // 12-37%, plus visible
         twinkles: i < twinkleCount,
         phase: Math.random() * Math.PI * 2,
         speed: 0.6 + Math.random() * 0.8,
       });
     }
     starsRef.current = stars;
+    console.log(`[Starfield] mounted with ${stars.length} stars (${twinkleCount} twinkle)`);
   }, [starCount, twinkleCount]);
 
   // Resize → met à jour les dimensions du canvas.
@@ -120,7 +121,18 @@ export function Starfield({
     <canvas
       ref={canvasRef}
       aria-hidden="true"
-      className="pointer-events-none fixed inset-0 z-0 block"
+      className="pointer-events-none"
+      style={{
+        // Inline styles en fallback au cas où les classes Tailwind manquent.
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 0,
+        display: 'block',
+        pointerEvents: 'none',
+      }}
     />
   );
 }

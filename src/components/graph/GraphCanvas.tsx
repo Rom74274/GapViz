@@ -933,11 +933,12 @@ function drawCenter(
   const r = n.radius * s.breathing;
   const now = performance.now();
 
-  // Halo externe pulsant (4 sec, 15-25% opacité) — donne vie au centre.
-  const pulse = 0.20 + 0.05 * Math.sin((2 * Math.PI * now) / 4000);
-  const outerR = r * 3.6;
-  const outerGrad = ctx.createRadialGradient(n.x, n.y, r * 2, n.x, n.y, outerR);
+  // Halo externe pulsant (4 sec) — donne vie au centre, visible mais sobre.
+  const pulse = 0.32 + 0.12 * Math.sin((2 * Math.PI * now) / 4000); // 20–44%
+  const outerR = r * 4.0;
+  const outerGrad = ctx.createRadialGradient(n.x, n.y, r * 1.6, n.x, n.y, outerR);
   outerGrad.addColorStop(0, withAlpha(n.color, pulse));
+  outerGrad.addColorStop(0.5, withAlpha(n.color, pulse * 0.4));
   outerGrad.addColorStop(1, withAlpha(n.color, 0));
   ctx.fillStyle = outerGrad;
   ctx.beginPath();
