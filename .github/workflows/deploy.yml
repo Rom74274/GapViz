@@ -32,6 +32,13 @@ jobs:
         run: npm run build
         env:
           NODE_ENV: production
+          # Supabase credentials — set these as GitHub repository secrets :
+          # Settings → Secrets and variables → Actions → New repository secret
+          # Si les secrets ne sont pas définis, le build passe quand même et
+          # l'app affiche un avertissement "Supabase non configuré" sur la
+          # page login.
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
       - uses: actions/configure-pages@v5
 

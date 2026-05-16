@@ -1,6 +1,8 @@
-# GapViz
+# Star Gap
 
 Visualise les clusters de mots-clés SEO et les gaps concurrentiels.
+
+> Le repo GitHub s'appelle encore `GapViz` (renommage à venir). Le brand de l'app est **Star Gap** depuis la v0.2.
 
 ## Stack
 

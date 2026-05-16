@@ -224,7 +224,7 @@ function ManualMappingPanel({
         <div className="flex-1">
           <p className="font-semibold">Format CSV non reconnu — mapping manuel</p>
           <p className="mt-0.5 text-amber-300/80">
-            Associe chaque colonne du CSV à un champ GapViz.{' '}
+            Associe chaque colonne du CSV à un champ Star Gap.{' '}
             <span className="font-mono">Keyword</span> et{' '}
             <span className="font-mono">Volume</span> sont obligatoires.
             {state.suggestion && (

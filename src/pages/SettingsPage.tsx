@@ -1,7 +1,20 @@
 import { useEffect, useState } from 'react';
-import { Eye, EyeOff, Save, Trash2, Database } from 'lucide-react';
+import {
+  Eye,
+  EyeOff,
+  Save,
+  Trash2,
+  Database,
+  LogOut,
+  User as UserIcon,
+  Mail,
+  Loader2,
+} from 'lucide-react';
 import { useSettings } from '@/lib/store';
 import { clearAllClusterCache, getCacheStats } from '@/lib/clustering';
+import { useAuth } from '@/hooks/useAuth';
+import { signOut } from '@/lib/authStore';
+import { cn } from '@/lib/utils';
 
 export function SettingsPage() {
   const apiKey = useSettings((s) => s.apiKey);
@@ -28,7 +41,9 @@ export function SettingsPage() {
     <div className="mx-auto max-w-2xl px-6 py-10">
       <h1 className="text-2xl font-semibold tracking-tight">Réglages</h1>
 
-      <section className="mt-8 space-y-3 rounded-lg border border-border-subtle bg-bg-surface p-5">
+      <AccountSection />
+
+      <section className="mt-6 space-y-3 rounded-lg border border-border-subtle bg-bg-surface p-5">
         <div>
           <h2 className="text-sm font-semibold">Clé API Anthropic (BYOK)</h2>
           <p className="mt-1 text-xs text-text-secondary">
@@ -102,6 +117,75 @@ export function SettingsPage() {
 
       <ClusterCacheSection />
     </div>
+  );
+}
+
+// ============================================================================
+// Compte (Supabase auth)
+// ============================================================================
+
+function AccountSection() {
+  const { user, profile, status } = useAuth();
+  const [signingOut, setSigningOut] = useState(false);
+
+  if (status !== 'authenticated' || !user) return null;
+
+  const planLabel = profile?.plan ?? 'free';
+  const planColor =
+    planLabel === 'agency'
+      ? 'bg-purple-500/15 text-purple-300 border-purple-500/40'
+      : planLabel === 'pro'
+        ? 'bg-accent/15 text-accent border-accent/40'
+        : 'bg-bg-elevated text-text-secondary border-border-strong';
+
+  const onSignOut = async () => {
+    setSigningOut(true);
+    await signOut();
+    // L'AuthGuard redirige vers /login automatiquement.
+  };
+
+  return (
+    <section className="mt-8 space-y-4 rounded-lg border border-border-subtle bg-bg-surface p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3 min-w-0">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-bg-elevated text-text-secondary">
+            <UserIcon size={16} />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold">Compte</h2>
+            <div className="mt-0.5 flex items-center gap-1.5 text-xs text-text-secondary">
+              <Mail size={11} />
+              <span className="truncate">{user.email ?? '—'}</span>
+            </div>
+            {profile?.display_name && (
+              <p className="text-xs text-text-muted">{profile.display_name}</p>
+            )}
+          </div>
+        </div>
+        <span
+          className={cn(
+            'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide',
+            planColor,
+          )}
+        >
+          Plan {planLabel}
+        </span>
+      </div>
+
+      <button
+        type="button"
+        onClick={onSignOut}
+        disabled={signingOut}
+        className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle px-3 py-1.5 text-xs text-text-secondary transition-colors hover:border-red-400/60 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {signingOut ? (
+          <Loader2 size={12} className="animate-spin" />
+        ) : (
+          <LogOut size={12} />
+        )}
+        Se déconnecter
+      </button>
+    </section>
   );
 }
 

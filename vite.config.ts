@@ -3,8 +3,10 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'node:path';
 
-// Base path = "/GapViz/" en prod (GitHub Pages project page), "/" en dev.
-// On l'override via VITE_BASE si besoin (ex: custom domain).
+// Base path = "/GapViz/" en prod (le repo GitHub s'appelle encore GapViz,
+// donc l'URL de déploiement est /GapViz/). L'app elle s'appelle "Star Gap"
+// mais on garde le path pour ne pas casser la deploy URL existante. À
+// override via VITE_BASE quand on passera sur app.stargap.io.
 const base = process.env.VITE_BASE ?? (process.env.NODE_ENV === 'production' ? '/GapViz/' : '/');
 
 export default defineConfig({
@@ -15,9 +17,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
       manifest: {
-        name: 'GapViz — SEO Cluster MindMap',
-        short_name: 'GapViz',
-        description: 'Visualise les clusters de mots-clés SEO et les gaps concurrentiels.',
+        name: 'Star Gap — SEO Cluster MindMap',
+        short_name: 'Star Gap',
+        description: 'Star Gap — visualise les clusters de mots-clés SEO et les gaps concurrentiels.',
         theme_color: '#0a0a1a',
         background_color: '#0a0a1a',
         display: 'standalone',
