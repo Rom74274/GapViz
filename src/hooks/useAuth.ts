@@ -1,8 +1,9 @@
+import { useShallow } from 'zustand/react/shallow';
 import { useAuthStore } from '@/lib/authStore';
 
-// Hook fin et orienté composant : expose un snapshot stable du store
-// d'auth + les actions principales. Les actions sont des fonctions module-level
-// du store (cf. authStore.ts) et n'ont pas besoin d'être rebinder à chaque render.
+// Le snapshot doit être ref-stable entre les renders sinon Zustand boucle
+// (infinite update loop). useShallow compare les champs un à un et ne
+// déclenche un re-render que si l'un d'eux change vraiment.
 
 export {
   signInWithPassword,
@@ -12,11 +13,13 @@ export {
 } from '@/lib/authStore';
 
 export function useAuth() {
-  return useAuthStore((s) => ({
-    status: s.status,
-    user: s.user,
-    profile: s.profile,
-    session: s.session,
-    configError: s.configError,
-  }));
+  return useAuthStore(
+    useShallow((s) => ({
+      status: s.status,
+      user: s.user,
+      profile: s.profile,
+      session: s.session,
+      configError: s.configError,
+    })),
+  );
 }
