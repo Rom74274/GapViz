@@ -34,16 +34,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   reloadProfile: async () => {
     const { user } = get();
     if (!user) return;
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .maybeSingle();
-    if (error) {
-      console.error('[auth] reloadProfile error', error);
-      return;
+    console.log('[auth] reloadProfile start', { userId: user.id });
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .maybeSingle();
+      if (error) {
+        console.warn('[auth] reloadProfile error (non-blocking)', error);
+        return;
+      }
+      console.log('[auth] reloadProfile ok', { hasProfile: Boolean(data) });
+      set({ profile: (data as SupabaseProfile | null) ?? null });
+    } catch (e) {
+      console.error('[auth] reloadProfile threw', e);
     }
-    set({ profile: (data as SupabaseProfile | null) ?? null });
   },
 }));
 
@@ -70,14 +76,9 @@ export function initAuth(): void {
   // 1) Session existante au boot.
   supabase.auth
     .getSession()
-    .then(async ({ data: { session } }) => {
-      useAuthStore.getState()._setSession(session);
-      if (session?.user) {
-        await useAuthStore.getState().reloadProfile();
-        useAuthStore.getState()._setStatus('authenticated');
-      } else {
-        useAuthStore.getState()._setStatus('unauthenticated');
-      }
+    .then(({ data: { session } }) => {
+      console.log('[auth] getSession resolved', { hasSession: Boolean(session) });
+      applySession(session);
     })
     .catch((err) => {
       console.error('[auth] getSession failed', err);
@@ -85,17 +86,28 @@ export function initAuth(): void {
     });
 
   // 2) Listener sur les changements d'auth (signin, signout, refresh token).
-  supabase.auth.onAuthStateChange(async (event, session) => {
-    console.log('[auth] event', event);
-    useAuthStore.getState()._setSession(session);
-    if (session?.user) {
-      await useAuthStore.getState().reloadProfile();
-      useAuthStore.getState()._setStatus('authenticated');
-    } else {
-      useAuthStore.getState()._setProfile(null);
-      useAuthStore.getState()._setStatus('unauthenticated');
-    }
+  supabase.auth.onAuthStateChange((event, session) => {
+    console.log('[auth] event', event, { hasSession: Boolean(session) });
+    applySession(session);
   });
+}
+
+// Important : on ne BLOQUE PAS la transition vers 'authenticated' sur le
+// fetch du profile. Si la table profiles est manquante / RLS bloque /
+// réseau lent, l'utilisateur passe quand même en authenticated et peut
+// naviguer ; le profile arrive en background.
+function applySession(session: Session | null): void {
+  useAuthStore.getState()._setSession(session);
+  if (session?.user) {
+    useAuthStore.getState()._setStatus('authenticated');
+    useAuthStore
+      .getState()
+      .reloadProfile()
+      .catch((e) => console.error('[auth] reloadProfile (background) failed', e));
+  } else {
+    useAuthStore.getState()._setProfile(null);
+    useAuthStore.getState()._setStatus('unauthenticated');
+  }
 }
 
 // ---------------------------------------------------------------------------
