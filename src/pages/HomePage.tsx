@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
@@ -8,8 +9,13 @@ import {
   AlertTriangle,
   Activity,
   Users,
+  Cloud,
+  HardDrive,
 } from 'lucide-react';
-import { db, type Keyword } from '@/lib/db';
+import { db, type Keyword, type Project } from '@/lib/db';
+import { useSupabaseProjects } from '@/lib/dataLayer';
+import { supabase } from '@/lib/supabase';
+import { cn } from '@/lib/utils';
 
 interface ProjectStat {
   kwCount: number;
@@ -21,10 +27,35 @@ interface ProjectStat {
 }
 
 export function HomePage() {
-  const projects = useLiveQuery(() =>
+  const localProjects = useLiveQuery(() =>
     db.projects.orderBy('createdAt').reverse().toArray(),
   );
+  const {
+    projects: remoteProjects,
+    loading: remoteLoading,
+    refetch: refetchRemote,
+  } = useSupabaseProjects();
 
+  // Merge local + cloud : on dédupe par id, le remote gagne (= cloud source
+  // of truth quand un projet existe des deux côtés). Trie par createdAt desc.
+  const { projects, projectSources } = useMemo(() => {
+    const map = new Map<string, Project>();
+    const sources = new Map<string, 'local' | 'cloud'>();
+    for (const p of localProjects ?? []) {
+      map.set(p.id, p);
+      sources.set(p.id, 'local');
+    }
+    for (const p of remoteProjects) {
+      map.set(p.id, p);
+      sources.set(p.id, 'cloud');
+    }
+    const merged = [...map.values()].sort((a, b) => b.createdAt - a.createdAt);
+    return { projects: merged, projectSources: sources };
+  }, [localProjects, remoteProjects]);
+
+  // Pour la suite (stats par projet), on lit Dexie. Les projets cloud-only
+  // auront 0 KWs côté Dexie en 1e.1 — c'est OK, on les enrichira au load
+  // détaillé (1e.2 ou via le sync write-through).
   const stats = useLiveQuery(async (): Promise<Record<string, ProjectStat>> => {
     if (!projects || projects.length === 0) return {};
     const out: Record<string, ProjectStat> = {};
@@ -58,11 +89,13 @@ export function HomePage() {
   const onDelete = async (id: string, name: string) => {
     if (
       !confirm(
-        `Supprimer le projet "${name}" ?\nLes mots-clés et concurrents associés seront effacés.`,
+        `Supprimer le projet "${name}" ?\nLes mots-clés et concurrents associés seront effacés (local et cloud).`,
       )
     ) {
       return;
     }
+    const source = projectSources.get(id);
+    // 1. Purge Dexie (toujours, qu'il soit local ou cache cloud).
     await db.transaction(
       'rw',
       [db.projects, db.competitors, db.keywords, db.clusters],
@@ -73,6 +106,13 @@ export function HomePage() {
         await db.projects.delete(id);
       },
     );
+    // 2. Si c'est un projet cloud, supprime aussi côté Supabase (CASCADE
+    // s'occupe des enfants : competitors, keywords, positions, clusters).
+    if (source === 'cloud') {
+      const { error } = await supabase.from('projects').delete().eq('id', id);
+      if (error) console.error('[home] supabase project delete error', error);
+      refetchRemote();
+    }
   };
 
   const projectCount = projects?.length ?? 0;
@@ -104,7 +144,7 @@ export function HomePage() {
       </header>
 
       <section className="mt-8">
-        {projects === undefined ? (
+        {localProjects === undefined || remoteLoading ? (
           <EmptyState>Chargement…</EmptyState>
         ) : projects.length === 0 ? (
           <EmptyState icon={<FolderKanban size={36} className="text-text-muted" />}>
@@ -127,6 +167,7 @@ export function HomePage() {
                 domain={p.myDomain}
                 country={p.country}
                 stat={stats?.[p.id]}
+                source={projectSources.get(p.id) ?? 'local'}
                 onDelete={() => onDelete(p.id, p.name)}
               />
             ))}
@@ -160,6 +201,7 @@ function ProjectCard({
   domain,
   country,
   stat,
+  source,
   onDelete,
 }: {
   projectId: string;
@@ -167,6 +209,7 @@ function ProjectCard({
   domain: string;
   country: string;
   stat: ProjectStat | undefined;
+  source: 'local' | 'cloud';
   onDelete: () => void;
 }) {
   const coverage = stat?.coveragePct ?? 0;
@@ -181,7 +224,10 @@ function ProjectCard({
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h3 className="truncate text-lg font-semibold tracking-tight">{name}</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="truncate text-lg font-semibold tracking-tight">{name}</h3>
+              <SourceBadge source={source} />
+            </div>
             <p className="mt-0.5 truncate font-mono text-xs text-text-muted">
               {domain} · {country}
             </p>
@@ -233,6 +279,24 @@ function ProjectCard({
         <Trash2 size={14} />
       </button>
     </li>
+  );
+}
+
+function SourceBadge({ source }: { source: 'local' | 'cloud' }) {
+  const isCloud = source === 'cloud';
+  return (
+    <span
+      title={isCloud ? 'Projet synchronisé dans le cloud' : 'Projet local — non migré'}
+      className={cn(
+        'inline-flex h-5 shrink-0 items-center gap-1 rounded-full border px-1.5 text-[9px] font-medium uppercase tracking-wide',
+        isCloud
+          ? 'border-accent/40 bg-accent/10 text-accent'
+          : 'border-border-subtle bg-bg-elevated text-text-muted',
+      )}
+    >
+      {isCloud ? <Cloud size={9} /> : <HardDrive size={9} />}
+      {isCloud ? 'Cloud' : 'Local'}
+    </span>
   );
 }
 

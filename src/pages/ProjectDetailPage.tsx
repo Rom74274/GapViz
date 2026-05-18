@@ -13,16 +13,51 @@ import { FilterBar } from '@/components/filters/FilterBar';
 import { useProjectGraph } from '@/lib/useProjectGraph';
 import { useProjectFilters } from '@/lib/filterStore';
 import { isKeywordVisible } from '@/lib/filterLogic';
+import {
+  fetchProjectDetailFromSupabase,
+  syncProjectToDexie,
+} from '@/lib/dataLayer';
 import type { KeywordNode } from '@/components/graph/graphLayout';
+import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/utils';
 
 export function ProjectDetailPage() {
   const { projectId } = useParams<{ projectId: string }>();
+  const { status: authStatus } = useAuth();
   const [highlightedClusterId, setHighlightedClusterId] = useState<string | null>(null);
   const [view, setView] = useState<'graph' | 'table'>('graph');
   const [selectedKwId, setSelectedKwId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [remoteSyncState, setRemoteSyncState] = useState<
+    'idle' | 'syncing' | 'synced' | 'absent' | 'error'
+  >('idle');
   const graphRef = useRef<GraphCanvasHandle>(null);
+
+  // Sync Supabase → Dexie en write-through au mount du projet. Tout
+  // l'arbre downstream (GraphCanvas, FilterBar, ClusterPanel) lit Dexie
+  // via useLiveQuery et voit les données fraîches automatiquement.
+  useEffect(() => {
+    let cancelled = false;
+    if (!projectId || authStatus !== 'authenticated') return;
+    setRemoteSyncState('syncing');
+    fetchProjectDetailFromSupabase(projectId).then(async (result) => {
+      if (cancelled) return;
+      if (!result.ok) {
+        setRemoteSyncState(result.reason === 'not_found' ? 'absent' : 'error');
+        return;
+      }
+      try {
+        await syncProjectToDexie(result.data);
+        if (!cancelled) setRemoteSyncState('synced');
+      } catch (e) {
+        console.error('[projectDetail] syncToDexie failed', e);
+        if (!cancelled) setRemoteSyncState('error');
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, authStatus]);
 
   const { graph, project } = useProjectGraph(projectId ?? '');
   const filters = useProjectFilters(projectId ?? '');
@@ -51,8 +86,13 @@ export function ProjectDetailPage() {
     setSelectedKwId(null);
   }, [projectId]);
 
+  // Le projet peut être en cours de sync depuis Supabase : on attend la
+  // résolution du fetch remote avant de conclure "introuvable".
   if (project === undefined) {
     return <div className="p-10 text-text-muted">Chargement…</div>;
+  }
+  if (project === null && (remoteSyncState === 'idle' || remoteSyncState === 'syncing')) {
+    return <div className="p-10 text-text-muted">Chargement depuis le cloud…</div>;
   }
   if (project === null) {
     return (
