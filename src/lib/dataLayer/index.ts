@@ -15,4 +15,14 @@ export {
 
 export { syncProjectToDexie } from './syncToDexie';
 
+export {
+  createProjectInSupabase,
+  saveClusteringToSupabase,
+  type CreateProjectInput,
+  type CreateProjectProgress,
+  type CreateProjectResult,
+  type SaveClusteringResult,
+  type SiteWriteInput,
+} from './write';
+
 export type { FlatProjectGraph, RemoteProjectGraphBundle } from './translate';

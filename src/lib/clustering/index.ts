@@ -1,4 +1,9 @@
-import { db, type Cluster, type Keyword } from '@/lib/db';
+import { db, type Keyword } from '@/lib/db';
+import {
+  saveClusteringToSupabase,
+  fetchProjectDetailFromSupabase,
+  syncProjectToDexie,
+} from '@/lib/dataLayer';
 import { createClaudeClient } from '@/lib/claude';
 import {
   SYSTEM_PROMPT,
@@ -45,8 +50,6 @@ export interface RunClusteringOptions {
   force?: boolean;
   onProgress?: (progress: ClusterRunProgress) => void;
 }
-
-const UNCLUSTERED_LABEL = 'Non clusterisé';
 
 const log = (...args: unknown[]) => console.log('[clustering]', ...args);
 const warn = (...args: unknown[]) => console.warn('[clustering]', ...args);
@@ -157,16 +160,25 @@ export async function runClustering(
     });
   }
 
-  const persistResult = await persistClusters(projectId, assignments, unmatched);
-  log('persisted', persistResult);
+  // Écriture Supabase (source-of-truth) puis re-sync Dexie cache.
+  const saveResult = await saveClusteringToSupabase(projectId, assignments, unmatched);
+  log('saved to Supabase', saveResult);
+
+  const detail = await fetchProjectDetailFromSupabase(projectId);
+  if (detail.ok) {
+    await syncProjectToDexie(detail.data);
+    log('Dexie cache re-synced from Supabase');
+  } else {
+    warn('re-fetch after clustering failed', detail);
+  }
 
   const result: ClusterRunResult = {
     fromCache,
-    clusterCount: assignments.length + (persistResult.unclusteredId ? 1 : 0),
+    clusterCount: saveResult.newClusterCount,
     unmatchedCount: unmatched.length,
-    unclusteredClusterId: persistResult.unclusteredId,
+    unclusteredClusterId: saveResult.unclusteredClusterId,
     uniqueKeywordCount: uniqueCount,
-    persistedAssignments: persistResult.assignmentCount,
+    persistedAssignments: saveResult.matchedKwCount,
     totalChunks,
     usage,
   };
@@ -438,10 +450,6 @@ async function callClaude(
   };
 }
 
-// ============================================================================
-// Persistence
-// ============================================================================
-
 function dedupeByKeyword(keywords: Keyword[]): Keyword[] {
   const seen = new Map<string, Keyword>();
   for (const k of keywords) {
@@ -449,95 +457,6 @@ function dedupeByKeyword(keywords: Keyword[]): Keyword[] {
     if (!seen.has(key)) seen.set(key, k);
   }
   return [...seen.values()];
-}
-
-interface PersistResult {
-  unclusteredId: string | null;
-  assignmentCount: number;
-  newClusterCount: number;
-  totalKeywords: number;
-  matchedKeywords: number;
-}
-
-async function persistClusters(
-  projectId: string,
-  assignments: ClusterAssignment[],
-  unmatched: string[],
-): Promise<PersistResult> {
-  return db.transaction('rw', [db.clusters, db.keywords], async () => {
-    await db.clusters.where('projectId').equals(projectId).delete();
-    const allKws = await db.keywords.where('projectId').equals(projectId).toArray();
-
-    const kwIndex = new Map<string, Keyword[]>();
-    for (const k of allKws) {
-      const norm = k.keyword.trim().toLowerCase();
-      const list = kwIndex.get(norm);
-      if (list) list.push(k);
-      else kwIndex.set(norm, [k]);
-    }
-
-    const newClusters: Cluster[] = [];
-    const updates: { id: string; clusterId: string }[] = [];
-    const matched = new Set<string>();
-
-    for (const a of assignments) {
-      const cluster: Cluster = {
-        id: crypto.randomUUID(),
-        projectId,
-        name: a.name,
-        parentId: null,
-      };
-      newClusters.push(cluster);
-      for (const kw of a.keywords) {
-        const norm = kw.trim().toLowerCase();
-        const records = kwIndex.get(norm) ?? [];
-        if (records.length === 0) {
-          warn(`assignment KW "${kw}" not found in DB index`);
-          continue;
-        }
-        for (const r of records) {
-          updates.push({ id: r.id, clusterId: cluster.id });
-          matched.add(r.id);
-        }
-      }
-    }
-
-    let unclusteredId: string | null = null;
-    if (unmatched.length > 0) {
-      const unclustered: Cluster = {
-        id: crypto.randomUUID(),
-        projectId,
-        name: UNCLUSTERED_LABEL,
-        parentId: null,
-      };
-      newClusters.push(unclustered);
-      unclusteredId = unclustered.id;
-      for (const kw of unmatched) {
-        const records = kwIndex.get(kw.trim().toLowerCase()) ?? [];
-        for (const r of records) {
-          updates.push({ id: r.id, clusterId: unclustered.id });
-          matched.add(r.id);
-        }
-      }
-    }
-
-    // Sérialise les updates pour éviter toute race condition.
-    for (const k of allKws) {
-      await db.keywords.update(k.id, { clusterId: null });
-    }
-    await db.clusters.bulkAdd(newClusters);
-    for (const u of updates) {
-      await db.keywords.update(u.id, { clusterId: u.clusterId });
-    }
-
-    return {
-      unclusteredId,
-      assignmentCount: updates.length,
-      newClusterCount: newClusters.length,
-      totalKeywords: allKws.length,
-      matchedKeywords: matched.size,
-    };
-  });
 }
 
 export async function uniqueKeywordCount(projectId: string): Promise<number> {

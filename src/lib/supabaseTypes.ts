@@ -1,10 +1,16 @@
 // Types qui matchent le schéma Supabase (cf. brief Étape 1c).
 // Les noms de colonnes sont en snake_case côté DB ; on garde la même
 // convention ici pour éviter les translations à chaque lecture/écriture.
+//
+// IMPORTANT : on utilise `type` (pas `interface`) pour ces Row types.
+// Les interfaces n'ont pas d'index signature implicite et n'étendent
+// donc pas `Record<string, unknown>` — ce qui casse la contrainte
+// `GenericTable` de @supabase/supabase-js et fait résoudre les
+// paramètres .insert() / .update() à `never`.
 
 export type UserPlan = 'free' | 'pro' | 'agency';
 
-export interface SupabaseProfile {
+export type SupabaseProfile = {
   id: string;
   email: string | null;
   display_name: string | null;
@@ -12,9 +18,9 @@ export interface SupabaseProfile {
   plan_expires_at: string | null;
   created_at: string;
   updated_at: string;
-}
+};
 
-export interface SupabaseProject {
+export type SupabaseProject = {
   id: string;
   user_id: string;
   name: string;
@@ -22,17 +28,17 @@ export interface SupabaseProject {
   country: string;
   created_at: string;
   updated_at: string;
-}
+};
 
-export interface SupabaseCompetitor {
+export type SupabaseCompetitor = {
   id: string;
   project_id: string;
   domain: string;
   label: string | null;
   color: string;
-}
+};
 
-export interface SupabaseKeyword {
+export type SupabaseKeyword = {
   id: string;
   project_id: string;
   keyword: string;
@@ -44,64 +50,75 @@ export interface SupabaseKeyword {
   branded: boolean | null;
   traffic: number | null;
   serp_features: string | null;
-}
+};
 
-export interface SupabaseKeywordPosition {
+export type SupabaseKeywordPosition = {
   id: string;
   keyword_id: string;
   source_domain: string;
   position: number | null;
   url: string | null;
-}
+};
 
-export interface SupabaseCluster {
+export type SupabaseCluster = {
   id: string;
   project_id: string;
   name: string;
   parent_id: string | null;
   is_noise: boolean;
   excluded: boolean;
-}
+};
 
-// Type "Database" attendu par @supabase/supabase-js pour le typage des
-// requêtes. On expose un sous-ensemble — les `Insert`/`Update` partiels
-// laissent Supabase gérer les defaults (id, timestamps).
+// Type "Database" attendu par @supabase/supabase-js v2 :
+//   - Tables doivent avoir Row / Insert / Update / Relationships
+//   - Schema doit aussi déclarer Views / Functions (vide ici)
+// Sans ces clés, le client résout les paramètres .insert() / .update() à `never`.
 
-export interface Database {
+export type Database = {
   public: {
     Tables: {
       profiles: {
         Row: SupabaseProfile;
         Insert: Partial<SupabaseProfile> & { id: string };
         Update: Partial<SupabaseProfile>;
+        Relationships: [];
       };
       projects: {
         Row: SupabaseProject;
-        Insert: Omit<SupabaseProject, 'id' | 'created_at' | 'updated_at'> & {
+        // user_id est rempli côté serveur via default auth.uid() — optionnel ici.
+        Insert: Omit<SupabaseProject, 'id' | 'user_id' | 'created_at' | 'updated_at'> & {
           id?: string;
+          user_id?: string;
         };
         Update: Partial<SupabaseProject>;
+        Relationships: [];
       };
       competitors: {
         Row: SupabaseCompetitor;
         Insert: Omit<SupabaseCompetitor, 'id'> & { id?: string };
         Update: Partial<SupabaseCompetitor>;
+        Relationships: [];
       };
       keywords: {
         Row: SupabaseKeyword;
         Insert: Omit<SupabaseKeyword, 'id'> & { id?: string };
         Update: Partial<SupabaseKeyword>;
+        Relationships: [];
       };
       keyword_positions: {
         Row: SupabaseKeywordPosition;
         Insert: Omit<SupabaseKeywordPosition, 'id'> & { id?: string };
         Update: Partial<SupabaseKeywordPosition>;
+        Relationships: [];
       };
       clusters: {
         Row: SupabaseCluster;
         Insert: Omit<SupabaseCluster, 'id'> & { id?: string };
         Update: Partial<SupabaseCluster>;
+        Relationships: [];
       };
     };
+    Views: Record<string, never>;
+    Functions: Record<string, never>;
   };
-}
+};

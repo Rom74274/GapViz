@@ -1,9 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Sparkles } from 'lucide-react';
+import { Plus, Sparkles, Loader2 } from 'lucide-react';
 import { SiteCard, type SiteEntry, labelFromDomain } from '@/components/onboarding/SiteCard';
-import { db } from '@/lib/db';
 import { MY_SITE_COLOR, pickNextColor } from '@/lib/colors';
+import {
+  createProjectInSupabase,
+  type CreateProjectProgress,
+} from '@/lib/dataLayer';
 
 function newSite(isMe: boolean, color: string): SiteEntry {
   return {
@@ -27,6 +30,9 @@ export function NewProjectPage() {
   const [mySite, setMySite] = useState<SiteEntry>(() => newSite(true, MY_SITE_COLOR));
   const [competitors, setCompetitors] = useState<SiteEntry[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [submitProgress, setSubmitProgress] = useState<CreateProjectProgress | null>(
+    null,
+  );
 
   const usedColors = useMemo(
     () => [mySite.color, ...competitors.map((c) => c.color)],
@@ -75,58 +81,31 @@ export function NewProjectPage() {
     if (!canSubmit) return;
     setSubmitting(true);
 
-    const projectId = crypto.randomUUID();
-    const now = Date.now();
-
     try {
-      await db.transaction('rw', [db.projects, db.competitors, db.keywords], async () => {
-        await db.projects.add({
-          id: projectId,
+      const allSites = [mySite, ...competitors].filter((s) => s.domain.trim() !== '');
+
+      // Écriture Supabase first. Le sync write-through Dexie est déclenché
+      // automatiquement au mount de ProjectDetailPage (cf. 1e.1).
+      const { projectId } = await createProjectInSupabase(
+        {
           name: name.trim(),
           myDomain: myDomain.trim(),
           country: country.trim().toUpperCase(),
-          createdAt: now,
-          updatedAt: now,
-        });
-
-        const allSites = [mySite, ...competitors].filter((s) => s.domain.trim() !== '');
-
-        for (const site of allSites) {
-          const competitorId = crypto.randomUUID();
-          await db.competitors.add({
-            id: competitorId,
-            projectId,
-            domain: site.domain.trim(),
-            label: site.label.trim() || labelFromDomain(site.domain),
-            color: site.color,
-            isMe: site.isMe,
-          });
-
-          if (site.parseResult && site.parseResult.rows.length > 0) {
-            const keywords = site.parseResult.rows.map((row) => ({
-              id: crypto.randomUUID(),
-              projectId,
-              keyword: row.keyword,
-              volume: row.volume,
-              kd: row.kd,
-              cpc: row.cpc,
-              intent: row.intent,
-              clusterId: null,
-              sourceDomain: site.domain.trim(),
-              position: row.position,
-              url: row.url,
-              traffic: row.traffic ?? null,
-              serpFeatures: row.serpFeatures ?? null,
-              branded: row.branded ?? null,
-            }));
-            await db.keywords.bulkAdd(keywords);
-          }
-        }
-      });
+          sites: allSites.map((s) => ({
+            domain: s.domain.trim(),
+            label: s.label.trim() || labelFromDomain(s.domain),
+            color: s.color,
+            isMe: s.isMe,
+            parseResult: s.parseResult,
+          })),
+        },
+        (p) => setSubmitProgress(p),
+      );
 
       navigate(`/projects/${projectId}`);
     } catch (err) {
       setSubmitting(false);
+      setSubmitProgress(null);
       console.error(err);
       alert(
         'Erreur lors de la sauvegarde : ' +
@@ -235,7 +214,16 @@ export function NewProjectPage() {
 
       <footer className="mt-8 flex items-center justify-between gap-4 rounded-lg border border-border-subtle bg-bg-surface p-4">
         <div className="text-xs text-text-secondary">
-          {totalKeywords > 0 ? (
+          {submitting && submitProgress ? (
+            <span className="font-mono">
+              {progressLabel(submitProgress)}
+              {submitProgress.total > 0 && (
+                <span className="text-text-muted">
+                  {' '}· {submitProgress.done}/{submitProgress.total}
+                </span>
+              )}
+            </span>
+          ) : totalKeywords > 0 ? (
             <>
               <span className="font-mono text-text-primary">{totalKeywords}</span> mots-clés au total,
               répartis sur{' '}
@@ -254,10 +242,25 @@ export function NewProjectPage() {
           disabled={!canSubmit}
           className="inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-bg-elevated disabled:text-text-muted"
         >
-          <Sparkles size={16} />
+          {submitting ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
           {submitting ? 'Sauvegarde…' : 'Lancer l\'analyse'}
         </button>
       </footer>
     </div>
   );
+}
+
+function progressLabel(p: CreateProjectProgress): string {
+  switch (p.step) {
+    case 'project':
+      return 'Création du projet…';
+    case 'competitors':
+      return 'Enregistrement des concurrents…';
+    case 'keywords':
+      return 'Upload des mots-clés';
+    case 'positions':
+      return 'Upload des positions';
+    case 'done':
+      return 'Terminé';
+  }
 }
