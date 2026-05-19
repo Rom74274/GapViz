@@ -20,6 +20,9 @@ export interface SiteWriteInput {
 }
 
 export interface CreateProjectInput {
+  // Optionnel : permet à la migration de préserver l'id Dexie existant
+  // (les bookmarks /projects/<id> continuent de fonctionner après migration).
+  projectId?: string;
   name: string;
   myDomain: string;
   country: string;
@@ -54,7 +57,7 @@ export async function createProjectInSupabase(
     throw new Error('Session Supabase introuvable — reconnecte-toi.');
   }
   const userId = userData.user.id;
-  const projectId = crypto.randomUUID();
+  const projectId = input.projectId ?? crypto.randomUUID();
 
   // ------- 1. project -------
   onProgress?.({ step: 'project', done: 0, total: 1 });

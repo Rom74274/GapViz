@@ -9,12 +9,22 @@ import {
   User as UserIcon,
   Mail,
   Loader2,
+  CloudUpload,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react';
 import { useSettings } from '@/lib/store';
 import { clearAllClusterCache, getCacheStats } from '@/lib/clustering';
 import { useAuth } from '@/hooks/useAuth';
 import { signOut } from '@/lib/authStore';
 import { cn } from '@/lib/utils';
+import {
+  listMigratableProjects,
+  migrateLocalProjectsToSupabase,
+  type MigratableProject,
+  type MigrationProgress,
+  type MigrationResult,
+} from '@/lib/dataLayer';
 
 export function SettingsPage() {
   const apiKey = useSettings((s) => s.apiKey);
@@ -115,9 +125,185 @@ export function SettingsPage() {
         </select>
       </section>
 
+      <MigrationSection />
+
       <ClusterCacheSection />
     </div>
   );
+}
+
+// ============================================================================
+// Migration Dexie → Supabase (1e.3)
+// ============================================================================
+
+function MigrationSection() {
+  const { status } = useAuth();
+  const [migratable, setMigratable] = useState<MigratableProject[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState<MigrationProgress | null>(null);
+  const [result, setResult] = useState<MigrationResult | null>(null);
+
+  const refresh = async () => {
+    if (status !== 'authenticated') return;
+    setLoading(true);
+    try {
+      const list = await listMigratableProjects();
+      setMigratable(list);
+    } catch (e) {
+      console.error('[migration] list failed', e);
+      setMigratable([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
+
+  if (status !== 'authenticated') return null;
+  if (migratable === null && !loading) return null;
+
+  const onMigrate = async () => {
+    setRunning(true);
+    setResult(null);
+    setProgress(null);
+    try {
+      const r = await migrateLocalProjectsToSupabase((p) => setProgress(p));
+      setResult(r);
+      await refresh();
+    } catch (e) {
+      console.error('[migration] failed', e);
+      setResult({
+        migrated: [],
+        skipped: [],
+        failed: [{ id: '?', name: '?', error: e instanceof Error ? e.message : String(e) }],
+      });
+    } finally {
+      setRunning(false);
+      setProgress(null);
+    }
+  };
+
+  const nothingToMigrate = migratable !== null && migratable.length === 0;
+
+  return (
+    <section className="mt-6 space-y-3 rounded-lg border border-border-subtle bg-bg-surface p-5">
+      <div>
+        <h2 className="flex items-center gap-2 text-sm font-semibold">
+          <CloudUpload size={14} className="text-text-secondary" />
+          Migration des projets locaux vers le cloud
+        </h2>
+        <p className="mt-1 text-xs text-text-secondary">
+          Les projets créés avant la migration cloud sont stockés uniquement sur ce
+          navigateur. Migre-les vers Supabase pour les retrouver depuis n'importe quel appareil.
+        </p>
+      </div>
+
+      {loading && (
+        <p className="text-xs text-text-muted">Détection des projets locaux…</p>
+      )}
+
+      {nothingToMigrate && !running && !result && (
+        <p className="flex items-center gap-1.5 text-xs text-text-muted">
+          <CheckCircle2 size={12} className="text-green-400" />
+          Aucun projet local à migrer.
+        </p>
+      )}
+
+      {migratable && migratable.length > 0 && !running && (
+        <>
+          <ul className="space-y-1.5 text-xs">
+            {migratable.map((p) => (
+              <li
+                key={p.id}
+                className="flex items-center justify-between rounded border border-border-subtle bg-bg-base px-3 py-1.5"
+              >
+                <span className="font-medium text-text-primary">{p.name}</span>
+                <span className="font-mono text-text-muted">
+                  {p.competitorCount} site{p.competitorCount > 1 ? 's' : ''} ·{' '}
+                  {p.keywordCount} kw
+                </span>
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            onClick={onMigrate}
+            className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-2 text-sm font-medium text-white hover:bg-accent-hover"
+          >
+            <CloudUpload size={14} />
+            Migrer {migratable.length} projet{migratable.length > 1 ? 's' : ''}
+          </button>
+        </>
+      )}
+
+      {running && progress && (
+        <div className="rounded border border-border-subtle bg-bg-base px-3 py-2 text-xs">
+          <div className="flex items-center gap-2">
+            <Loader2 size={12} className="animate-spin text-accent" />
+            <span className="font-medium text-text-primary">
+              {progress.projectName}
+            </span>
+            <span className="text-text-muted">
+              ({progress.projectIndex + 1}/{progress.totalProjects})
+            </span>
+          </div>
+          <p className="mt-1 font-mono text-text-secondary">
+            {progressLabel(progress)}
+            {progress.stepTotal > 0 && (
+              <span className="text-text-muted">
+                {' '}· {progress.stepDone}/{progress.stepTotal}
+              </span>
+            )}
+          </p>
+        </div>
+      )}
+
+      {result && (
+        <div className="space-y-1 text-xs">
+          {result.migrated.length > 0 && (
+            <p className="flex items-center gap-1.5 text-green-400">
+              <CheckCircle2 size={12} />
+              {result.migrated.length} projet{result.migrated.length > 1 ? 's' : ''} migré
+              {result.migrated.length > 1 ? 's' : ''}.
+            </p>
+          )}
+          {result.failed.length > 0 && (
+            <div className="space-y-1">
+              {result.failed.map((f) => (
+                <p key={f.id} className="flex items-start gap-1.5 text-red-300">
+                  <AlertCircle size={12} className="mt-0.5 shrink-0" />
+                  <span>
+                    <strong>{f.name}</strong> : {f.error}
+                  </span>
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function progressLabel(p: MigrationProgress): string {
+  switch (p.step) {
+    case 'starting':
+      return 'Démarrage…';
+    case 'project':
+      return 'Création du projet…';
+    case 'competitors':
+      return 'Enregistrement des concurrents…';
+    case 'keywords':
+      return 'Upload des mots-clés';
+    case 'positions':
+      return 'Upload des positions';
+    case 'done':
+      return 'Terminé';
+  }
 }
 
 // ============================================================================

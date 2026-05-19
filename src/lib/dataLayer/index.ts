@@ -26,3 +26,11 @@ export {
 } from './write';
 
 export type { FlatProjectGraph, RemoteProjectGraphBundle } from './translate';
+
+export {
+  listMigratableProjects,
+  migrateLocalProjectsToSupabase,
+  type MigratableProject,
+  type MigrationProgress,
+  type MigrationResult,
+} from './migrate';
