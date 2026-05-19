@@ -16,6 +16,10 @@ export type SupabaseProfile = {
   display_name: string | null;
   plan: UserPlan;
   plan_expires_at: string | null;
+  // Compteur clustering du mois courant. Reset rolling 30j via
+  // clusterings_reset_at. Cf. étape 2 du brief SaaS.
+  clusterings_used: number;
+  clusterings_reset_at: string;
   created_at: string;
   updated_at: string;
 };

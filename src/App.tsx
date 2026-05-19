@@ -8,6 +8,7 @@ import { LoginPage } from '@/pages/LoginPage';
 import { NewProjectPage } from '@/pages/NewProjectPage';
 import { ProjectDetailPage } from '@/pages/ProjectDetailPage';
 import { SettingsPage } from '@/pages/SettingsPage';
+import { PricingPage } from '@/pages/PricingPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 import { initAuth } from '@/lib/authStore';
 
@@ -33,6 +34,7 @@ function App() {
               <Route path="projects/new" element={<NewProjectPage />} />
               <Route path="projects/:projectId" element={<ProjectDetailPage />} />
               <Route path="settings" element={<SettingsPage />} />
+              <Route path="pricing" element={<PricingPage />} />
               <Route path="*" element={<NotFoundPage />} />
             </Route>
           </Route>
