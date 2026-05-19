@@ -31,3 +31,19 @@ export async function syncProjectToDexie(
     },
   );
 }
+
+// Invalide complètement le cache Dexie pour un projet — à appeler après
+// une suppression Supabase (ou pour purger un projet local-only).
+// Contrepartie de syncProjectToDexie pour le cycle de vie de la cache.
+export async function purgeProjectFromDexie(projectId: string): Promise<void> {
+  await db.transaction(
+    'rw',
+    [db.projects, db.competitors, db.keywords, db.clusters],
+    async () => {
+      await db.keywords.where('projectId').equals(projectId).delete();
+      await db.competitors.where('projectId').equals(projectId).delete();
+      await db.clusters.where('projectId').equals(projectId).delete();
+      await db.projects.delete(projectId);
+    },
+  );
+}

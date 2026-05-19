@@ -13,7 +13,7 @@ import {
   HardDrive,
 } from 'lucide-react';
 import { db, type Keyword, type Project } from '@/lib/db';
-import { useSupabaseProjects } from '@/lib/dataLayer';
+import { useSupabaseProjects, purgeProjectFromDexie } from '@/lib/dataLayer';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 
@@ -53,9 +53,10 @@ export function HomePage() {
     return { projects: merged, projectSources: sources };
   }, [localProjects, remoteProjects]);
 
-  // Pour la suite (stats par projet), on lit Dexie. Les projets cloud-only
-  // auront 0 KWs côté Dexie en 1e.1 — c'est OK, on les enrichira au load
-  // détaillé (1e.2 ou via le sync write-through).
+  // Stats par projet lues depuis Dexie (cache write-through). Pour les
+  // projets cloud pas encore ouverts, le cache est vide → stats à 0. Elles
+  // s'enrichiront automatiquement quand ProjectDetailPage déclenchera le
+  // sync write-through au mount.
   const stats = useLiveQuery(async (): Promise<Record<string, ProjectStat>> => {
     if (!projects || projects.length === 0) return {};
     const out: Record<string, ProjectStat> = {};
@@ -95,24 +96,22 @@ export function HomePage() {
       return;
     }
     const source = projectSources.get(id);
-    // 1. Purge Dexie (toujours, qu'il soit local ou cache cloud).
-    await db.transaction(
-      'rw',
-      [db.projects, db.competitors, db.keywords, db.clusters],
-      async () => {
-        await db.keywords.where('projectId').equals(id).delete();
-        await db.competitors.where('projectId').equals(id).delete();
-        await db.clusters.where('projectId').equals(id).delete();
-        await db.projects.delete(id);
-      },
-    );
-    // 2. Si c'est un projet cloud, supprime aussi côté Supabase (CASCADE
-    // s'occupe des enfants : competitors, keywords, positions, clusters).
+    // Source-of-truth first : si cloud, on supprime Supabase d'abord
+    // (CASCADE purge competitors / keywords / positions / clusters).
+    // Si ça échoue, on ne touche pas le cache Dexie pour ne pas créer un
+    // état incohérent — l'utilisateur peut retenter.
     if (source === 'cloud') {
       const { error } = await supabase.from('projects').delete().eq('id', id);
-      if (error) console.error('[home] supabase project delete error', error);
+      if (error) {
+        console.error('[home] supabase project delete error', error);
+        alert(`Erreur Supabase : ${error.message}`);
+        return;
+      }
       refetchRemote();
     }
+    // Puis on invalide le cache Dexie (= source-of-truth pour les projets
+    // local-only pas encore migrés).
+    await purgeProjectFromDexie(id);
   };
 
   const projectCount = projects?.length ?? 0;

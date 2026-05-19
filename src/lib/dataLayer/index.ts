@@ -13,7 +13,7 @@ export {
   type SupabaseProjectDetailStatus,
 } from './useSupabaseProject';
 
-export { syncProjectToDexie } from './syncToDexie';
+export { syncProjectToDexie, purgeProjectFromDexie } from './syncToDexie';
 
 export {
   createProjectInSupabase,
