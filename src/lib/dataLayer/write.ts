@@ -45,6 +45,15 @@ export async function createProjectInSupabase(
   input: CreateProjectInput,
   onProgress?: (p: CreateProjectProgress) => void,
 ): Promise<CreateProjectResult> {
+  // user_id doit être présent dans l'INSERT pour passer la RLS policy
+  // `with check (user_id = auth.uid())`. On ne se repose pas sur un
+  // `default auth.uid()` côté schéma (pas garanti, et certains schémas
+  // évaluent la default APRÈS la check policy).
+  const { data: userData, error: userErr } = await supabase.auth.getUser();
+  if (userErr || !userData.user) {
+    throw new Error('Session Supabase introuvable — reconnecte-toi.');
+  }
+  const userId = userData.user.id;
   const projectId = crypto.randomUUID();
 
   // ------- 1. project -------
@@ -52,6 +61,7 @@ export async function createProjectInSupabase(
   {
     const { error } = await supabase.from('projects').insert({
       id: projectId,
+      user_id: userId,
       name: input.name,
       my_domain: input.myDomain,
       country: input.country,
