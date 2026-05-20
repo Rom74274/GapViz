@@ -70,8 +70,7 @@ export type LimitReason =
   | 'max_competitors'
   | 'max_clusterings'
   | 'csv_export'
-  | 'table_truncated'
-  | 'no_api_key';
+  | 'table_truncated';
 
 export interface LimitResult {
   allowed: boolean;
@@ -140,12 +139,11 @@ export function checkMaxCompetitors(plan: UserPlan, currentCount: number): Limit
   };
 }
 
-// Pour le clustering, on a deux cas :
-//   - BYOK (l'user a sa propre clé API) → illimité tant qu'on n'a pas
-//     d'edge function managée. Tous les coûts sont sur sa clé.
-//   - Pas de BYOK → on devrait passer par l'edge function (étape 3),
-//     comptée contre `clusterings_used`. Pas encore implémenté, donc on
-//     refuse avec un CTA "ajoute ta clé API".
+// Gate clustering, deux modes :
+//   - BYOK (l'user a sa propre clé API) → illimité, client-side direct.
+//     Le compteur clusterings_used n'est pas incrémenté (user paie sa clé).
+//   - Pas de BYOK → mode managé via Edge Function. Limite par plan
+//     appliquée serveur-side, compteur incrémenté à chaque run.
 export function checkRunClustering(
   plan: UserPlan,
   hasOwnApiKey: boolean,
@@ -153,34 +151,23 @@ export function checkRunClustering(
 ): LimitResult {
   if (hasOwnApiKey) return allowed;
 
-  // Pas de BYOK : on est en mode "clustering managé" (= edge function future).
-  // En attendant l'étape 3, on refuse explicitement.
+  // Mode managé : quota appliqué selon le plan.
   const limit = PLAN_LIMITS[plan].maxClusteringsPerMonth;
-  if (limit === null) {
-    return {
-      allowed: false,
-      reason: 'no_api_key',
-      message:
-        'Le clustering managé arrive bientôt. En attendant, ajoute ta clé Claude API dans Settings.',
-    };
-  }
+  if (limit === null) return allowed; // Agency : illimité
   if (clusteringsUsed >= limit) {
     return {
       allowed: false,
       reason: 'max_clusterings',
       limit,
       current: clusteringsUsed,
-      suggestedPlan: nextPlanWith(plan, (l) => l.maxClusteringsPerMonth === null || (l.maxClusteringsPerMonth ?? 0) > limit),
-      message: `Ton plan ${PLAN_LABELS[plan]} permet ${limit} clustering${limit > 1 ? 's' : ''} managé${limit > 1 ? 's' : ''} par mois. Ajoute ta clé Claude pour rester illimité.`,
+      suggestedPlan: nextPlanWith(
+        plan,
+        (l) => l.maxClusteringsPerMonth === null || (l.maxClusteringsPerMonth ?? 0) > limit,
+      ),
+      message: `Ton plan ${PLAN_LABELS[plan]} permet ${limit} clustering${limit > 1 ? 's' : ''} managé${limit > 1 ? 's' : ''} par mois (utilisé : ${clusteringsUsed}). Ajoute ta clé Claude dans Settings pour rester illimité, ou upgrade.`,
     };
   }
-  // Quota dispo mais edge function pas encore là.
-  return {
-    allowed: false,
-    reason: 'no_api_key',
-    message:
-      'Le clustering managé arrive bientôt. En attendant, ajoute ta clé Claude API dans Settings.',
-  };
+  return allowed;
 }
 
 export function checkCsvExport(plan: UserPlan): LimitResult {

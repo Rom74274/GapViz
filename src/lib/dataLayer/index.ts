@@ -34,3 +34,10 @@ export {
   type MigrationProgress,
   type MigrationResult,
 } from './migrate';
+
+export {
+  runManagedClustering,
+  ManagedClusteringError,
+  type ManagedClusterResult,
+  type ManagedClusterError,
+} from './managedClustering';

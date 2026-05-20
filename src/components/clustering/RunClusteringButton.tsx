@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
 import {
   Sparkles,
   Loader2,
@@ -10,6 +9,7 @@ import {
   ChevronDown,
   Zap,
   Trash2,
+  Cloud,
 } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useSettings } from '@/lib/store';
@@ -24,10 +24,10 @@ import {
   type ClusterRunResult,
   type ClusterRunProgress,
 } from '@/lib/clustering';
+import { runManagedClustering, ManagedClusteringError } from '@/lib/dataLayer';
 import { useAuth } from '@/hooks/useAuth';
-import { checkRunClustering, type LimitResult } from '@/lib/plans';
+import { checkRunClustering, PLAN_LIMITS, type LimitResult } from '@/lib/plans';
 import type { UserPlan } from '@/lib/supabaseTypes';
-import { incrementClusteringsUsed } from '@/lib/usage';
 import { UpgradeModal } from '@/components/UpgradeModal';
 import { cn } from '@/lib/utils';
 
@@ -59,37 +59,49 @@ export function RunClusteringButton({ projectId, variant = 'card' }: Props) {
   }, [projectId, existingClusterCount]);
 
   const run = async (force: boolean) => {
-    // Pre-check : la gate ne bloque qu'en mode managé (pas de BYOK).
-    // BYOK = utilisateur paie sa propre clé Claude, donc illimité.
+    // Pre-check : la gate vérifie quota managé si pas de BYOK.
     const gate = checkRunClustering(plan, !!apiKey, profile?.clusterings_used ?? 0);
     if (!gate.allowed) {
       setUpgradeResult(gate);
       return;
     }
-    if (!apiKey) return;
     setStatus('running');
     setError(null);
     setProgress(null);
     try {
-      const r = await runClustering(projectId, {
-        apiKey,
-        model,
-        force,
-        onProgress: (p) => setProgress(p),
-      });
-      setResult(r);
-      setStatus('done');
-      // Stat : on incrémente le compteur en background (n'attend pas l'UI).
-      // Le reset rolling 30j est géré dans incrementClusteringsUsed.
-      // Si depuis le cache, l'appel Claude n'a pas eu lieu — pas d'increment.
-      if (!r.fromCache) {
-        incrementClusteringsUsed().catch((e) =>
-          console.error('[clustering] increment usage failed (non-blocking)', e),
-        );
+      if (apiKey) {
+        // BYOK : appel Claude direct depuis le browser. Pas d'increment
+        // compteur (user paie sa propre clé).
+        const r = await runClustering(projectId, {
+          apiKey,
+          model,
+          force,
+          onProgress: (p) => setProgress(p),
+        });
+        setResult(r);
+      } else {
+        // Managé : Edge Function. Gate + Claude + save + increment côté
+        // serveur. Pas de progress streaming pour l'instant.
+        const r = await runManagedClustering(projectId);
+        setResult(r);
       }
+      setStatus('done');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erreur inconnue');
-      setStatus('error');
+      if (e instanceof ManagedClusteringError && e.code === 'quota_exceeded') {
+        // Course rare : le serveur a vu le quota épuisé après notre check
+        // local. On ouvre l'UpgradeModal avec le détail serveur.
+        setUpgradeResult({
+          allowed: false,
+          reason: 'max_clusterings',
+          limit: e.payload.limit,
+          current: e.payload.used,
+          message: e.message,
+        });
+        setStatus('idle');
+      } else {
+        setError(e instanceof Error ? e.message : 'Erreur inconnue');
+        setStatus('error');
+      }
     } finally {
       setProgress(null);
     }
@@ -103,13 +115,20 @@ export function RunClusteringButton({ projectId, variant = 'card' }: Props) {
     alert(`${count} entrée(s) de cache effacée(s) pour ce projet.`);
   };
 
+  // Modèle effectif : si BYOK, celui choisi dans Settings ; sinon, le
+  // modèle managé selon le plan (Haiku Free / Sonnet Pro+Agency).
+  const managedModel = PLAN_LIMITS[plan].managedModel;
+  const effectiveModel = apiKey ? model : managedModel;
+  const isManaged = !apiKey;
+
   if (variant === 'compact') {
     return (
       <>
         <CompactView
           apiKey={apiKey}
           kwCount={kwCount}
-          model={model}
+          model={effectiveModel}
+          isManaged={isManaged}
           status={status}
           result={result}
           error={error}
@@ -129,19 +148,6 @@ export function RunClusteringButton({ projectId, variant = 'card' }: Props) {
     );
   }
 
-  if (!apiKey) {
-    return (
-      <Card>
-        <KeyRound size={18} className="text-text-secondary" />
-        <div className="flex-1">
-          <p className="text-sm">Le clustering nécessite ta clé API Anthropic.</p>
-          <Link to="/settings" className="text-xs text-accent hover:text-accent-hover">
-            Configurer dans les réglages →
-          </Link>
-        </div>
-      </Card>
-    );
-  }
   if (kwCount === null) {
     return (
       <Card>
@@ -161,7 +167,7 @@ export function RunClusteringButton({ projectId, variant = 'card' }: Props) {
     );
   }
 
-  const estimate = estimateClusteringCost(kwCount, model);
+  const estimate = isManaged ? null : estimateClusteringCost(kwCount, effectiveModel);
   const hasExisting = (existingClusterCount ?? 0) > 0;
 
   return (
@@ -174,12 +180,22 @@ export function RunClusteringButton({ projectId, variant = 'card' }: Props) {
               <span className="font-mono">{kwCount}</span> mots-clés uniques à clusteriser
             </p>
             <span className="font-mono text-xs text-text-muted">
-              estimé ~{formatUSD(estimate.usd)} · {model}
-              {estimate.chunks > 1 && (
-                <span className="ml-1.5 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300">
-                  chunked · {estimate.chunks} appels
-                </span>
-              )}
+              {isManaged ? (
+                <>
+                  <Cloud size={11} className="-mt-0.5 mr-1 inline text-accent" />
+                  managé · {effectiveModel}
+                </>
+              ) : estimate ? (
+                <>
+                  <KeyRound size={11} className="-mt-0.5 mr-1 inline" />
+                  BYOK · estimé ~{formatUSD(estimate.usd)} · {effectiveModel}
+                  {estimate.chunks > 1 && (
+                    <span className="ml-1.5 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300">
+                      chunked · {estimate.chunks} appels
+                    </span>
+                  )}
+                </>
+              ) : null}
             </span>
           </div>
           <StatusLine status={status} result={result} error={error} progress={progress} />
@@ -190,6 +206,10 @@ export function RunClusteringButton({ projectId, variant = 'card' }: Props) {
           onClearCache={clearCache}
           status={status}
           hasExisting={hasExisting}
+          // Force re-cluster + clear cache n'ont pas de sens en managé (pas
+          // de cache côté serveur, et chaque appel coûte). On masque le
+          // menu dropdown.
+          showSecondary={!isManaged}
         />
       </Card>
       <UpgradeModal
@@ -213,6 +233,7 @@ function SplitButton({
   status,
   hasExisting,
   size = 'normal',
+  showSecondary = true,
 }: {
   onPrimary: () => void;
   onForce: () => void;
@@ -220,6 +241,7 @@ function SplitButton({
   status: 'idle' | 'running' | 'error' | 'done';
   hasExisting: boolean;
   size?: 'normal' | 'small';
+  showSecondary?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -251,26 +273,31 @@ function SplitButton({
         onClick={onPrimary}
         disabled={status === 'running'}
         className={cn(
-          'inline-flex items-center gap-1.5 rounded-l-md border-r border-r-white/15 bg-accent font-medium text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50',
+          'inline-flex items-center gap-1.5 bg-accent font-medium text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50',
+          showSecondary
+            ? 'rounded-l-md border-r border-r-white/15'
+            : 'rounded-md',
           small ? 'px-2.5 py-1 text-xs' : 'px-3 py-1.5 text-sm',
         )}
       >
         <Icon size={small ? 12 : 14} className={status === 'running' ? 'animate-spin' : ''} />
         {primaryLabel}
       </button>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        disabled={status === 'running'}
-        className={cn(
-          'inline-flex items-center rounded-r-md bg-accent text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50',
-          small ? 'px-1.5 py-1' : 'px-2 py-1.5',
-        )}
-        aria-label="Plus d'options"
-      >
-        <ChevronDown size={small ? 12 : 14} />
-      </button>
-      {open && (
+      {showSecondary && (
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          disabled={status === 'running'}
+          className={cn(
+            'inline-flex items-center rounded-r-md bg-accent text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50',
+            small ? 'px-1.5 py-1' : 'px-2 py-1.5',
+          )}
+          aria-label="Plus d'options"
+        >
+          <ChevronDown size={small ? 12 : 14} />
+        </button>
+      )}
+      {open && showSecondary && (
         <div className="absolute right-0 top-full z-30 mt-1 min-w-[260px] rounded-lg border border-border-subtle bg-bg-surface p-1 shadow-2xl">
           <MenuItem
             onClick={() => {
@@ -401,6 +428,7 @@ function CompactView({
   apiKey,
   kwCount,
   model,
+  isManaged,
   status,
   result,
   error,
@@ -413,6 +441,7 @@ function CompactView({
   apiKey: string | null;
   kwCount: number | null;
   model: string;
+  isManaged: boolean;
   status: 'idle' | 'running' | 'error' | 'done';
   result: ClusterRunResult | null;
   error: string | null;
@@ -422,19 +451,11 @@ function CompactView({
   onForceRun: () => void;
   onClearCache: () => void;
 }) {
-  if (!apiKey) {
-    return (
-      <Link
-        to="/settings"
-        className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle bg-bg-surface px-3 py-1.5 text-xs text-text-secondary hover:border-border-strong hover:text-text-primary"
-      >
-        <KeyRound size={12} />
-        Configurer la clé API
-      </Link>
-    );
-  }
+  void apiKey; // gardé pour signature mais non utilisé désormais
   const cost =
-    kwCount !== null ? formatUSD(estimateClusteringCost(kwCount, model).usd) : '…';
+    !isManaged && kwCount !== null
+      ? formatUSD(estimateClusteringCost(kwCount, model).usd)
+      : null;
   const willChunk = kwCount !== null && kwCount > CHUNK_THRESHOLD;
   return (
     <div className="flex items-center gap-2">
@@ -469,13 +490,21 @@ function CompactView({
         status={status}
         hasExisting={hasExisting}
         size="small"
+        showSecondary={!isManaged}
       />
       <span
         className="hidden font-mono text-[10px] text-text-muted xl:inline"
-        title={`${kwCount} KWs uniques · ${model}${willChunk ? ' · chunked' : ''}`}
+        title={`${kwCount ?? '?'} KWs uniques · ${model}${willChunk ? ' · chunked' : ''}${isManaged ? ' · managé' : ' · BYOK'}`}
       >
-        ~{cost}
-        {willChunk && (
+        {isManaged ? (
+          <>
+            <Cloud size={9} className="-mt-0.5 mr-0.5 inline text-accent" />
+            managé
+          </>
+        ) : (
+          <>~{cost}</>
+        )}
+        {willChunk && !isManaged && (
           <span className="ml-1 rounded-full bg-amber-500/15 px-1 py-0.5 text-amber-300">
             chunked
           </span>
