@@ -12,7 +12,11 @@ import {
   CloudUpload,
   CheckCircle2,
   AlertCircle,
+  KeyRound,
+  Cloud,
+  Zap,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useSettings } from '@/lib/store';
 import { clearAllClusterCache, getCacheStats } from '@/lib/clustering';
 import { useAuth } from '@/hooks/useAuth';
@@ -25,6 +29,8 @@ import {
   type MigrationProgress,
   type MigrationResult,
 } from '@/lib/dataLayer';
+import { PLAN_LIMITS, PLAN_LABELS, shouldResetClusteringsCount } from '@/lib/plans';
+import type { UserPlan } from '@/lib/supabaseTypes';
 
 export function SettingsPage() {
   const apiKey = useSettings((s) => s.apiKey);
@@ -53,12 +59,16 @@ export function SettingsPage() {
 
       <AccountSection />
 
+      <ClusteringModeSection hasOwnApiKey={Boolean(apiKey)} />
+
       <section className="mt-6 space-y-3 rounded-lg border border-border-subtle bg-bg-surface p-5">
         <div>
           <h2 className="text-sm font-semibold">Clé API Anthropic (BYOK)</h2>
           <p className="mt-1 text-xs text-text-secondary">
             Ta clé est stockée localement (localStorage) et utilisée pour appeler Claude
             directement depuis ton navigateur. Elle ne transite par aucun serveur tiers.
+            Quand une clé est renseignée, le clustering passe en mode BYOK et n'est plus
+            compté dans ton quota.
           </p>
         </div>
 
@@ -109,15 +119,20 @@ export function SettingsPage() {
 
       <section className="mt-6 space-y-3 rounded-lg border border-border-subtle bg-bg-surface p-5">
         <div>
-          <h2 className="text-sm font-semibold">Modèle de clustering</h2>
+          <h2 className="text-sm font-semibold">Modèle de clustering (BYOK)</h2>
           <p className="mt-1 text-xs text-text-secondary">
             Sonnet 4.6 recommandé pour le naming des clusters. Haiku si tu veux économiser.
+            <span className="block mt-1 text-text-muted">
+              Ce choix ne s'applique qu'au mode BYOK. En mode managé, le modèle dépend de ton plan
+              (Haiku pour Free, Sonnet pour Pro/Agency).
+            </span>
           </p>
         </div>
         <select
           value={model}
           onChange={(e) => setModel(e.target.value)}
-          className="rounded-md border border-border-subtle bg-bg-base px-3 py-2 font-mono text-sm focus:border-accent focus:outline-none"
+          disabled={!apiKey}
+          className="rounded-md border border-border-subtle bg-bg-base px-3 py-2 font-mono text-sm focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
         >
           <option value="claude-sonnet-4-6">claude-sonnet-4-6 (recommandé)</option>
           <option value="claude-haiku-4-5-20251001">claude-haiku-4-5</option>
@@ -129,6 +144,145 @@ export function SettingsPage() {
 
       <ClusterCacheSection />
     </div>
+  );
+}
+
+// ============================================================================
+// Mode clustering (BYOK vs managé) + quota (étape 3c)
+// ============================================================================
+
+function ClusteringModeSection({ hasOwnApiKey }: { hasOwnApiKey: boolean }) {
+  const { profile, status } = useAuth();
+  if (status !== 'authenticated' || !profile) return null;
+
+  const plan: UserPlan = profile.plan ?? 'free';
+  const limits = PLAN_LIMITS[plan];
+  const quota = limits.maxClusteringsPerMonth;
+
+  // Rolling reset 30j : on calcule la quantité effectivement consommée
+  // côté affichage. Le reset réel se fait à la prochaine tentative — c'est
+  // déterministe et économe en writes.
+  const stale = shouldResetClusteringsCount(profile.clusterings_reset_at);
+  const effectiveUsed = stale ? 0 : profile.clusterings_used;
+
+  // Nombre de jours avant le prochain reset.
+  const resetMs = profile.clusterings_reset_at
+    ? new Date(profile.clusterings_reset_at).getTime() + 30 * 24 * 60 * 60 * 1000
+    : Date.now();
+  const daysLeft = Math.max(0, Math.ceil((resetMs - Date.now()) / (24 * 60 * 60 * 1000)));
+
+  if (hasOwnApiKey) {
+    return (
+      <section className="mt-8 space-y-3 rounded-lg border border-accent/30 bg-accent/[0.04] p-5">
+        <div className="flex items-start gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent">
+            <KeyRound size={16} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="flex items-center gap-2 text-sm font-semibold">
+              Mode actif : BYOK
+              <span className="rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-accent">
+                Ta clé
+              </span>
+            </h2>
+            <p className="mt-1 text-xs text-text-secondary">
+              Les clusterings appellent Claude directement depuis ton navigateur avec ta clé personnelle.
+              Pas de quota, pas de compteur — tu paies via ton compte Anthropic.
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="mt-8 space-y-3 rounded-lg border border-border-subtle bg-bg-surface p-5">
+      <div className="flex items-start gap-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-bg-elevated text-text-secondary">
+          <Cloud size={16} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2 className="flex items-center gap-2 text-sm font-semibold">
+            Mode actif : Managé
+            <span className="rounded-full border border-border-strong bg-bg-elevated px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-text-secondary">
+              Star Gap
+            </span>
+          </h2>
+          <p className="mt-1 text-xs text-text-secondary">
+            Les clusterings tournent sur l'infrastructure Star Gap avec le modèle{' '}
+            <span className="font-mono text-text-primary">{limits.managedModel}</span>.
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-3 rounded-md border border-border-subtle bg-bg-base/60 p-3">
+        <div className="flex items-baseline justify-between gap-3">
+          <p className="text-xs text-text-secondary">
+            Quota plan{' '}
+            <span className="font-semibold text-text-primary">{PLAN_LABELS[plan]}</span>
+          </p>
+          <p className="font-mono text-xs">
+            {quota === null ? (
+              <span className="text-accent">Illimité</span>
+            ) : (
+              <>
+                <span
+                  className={
+                    effectiveUsed >= quota ? 'text-red-400' : 'text-text-primary'
+                  }
+                >
+                  {effectiveUsed}
+                </span>
+                <span className="text-text-muted"> / {quota}</span>
+                <span className="ml-2 text-text-muted">
+                  · reset dans {daysLeft}j
+                </span>
+              </>
+            )}
+          </p>
+        </div>
+        {quota !== null && (
+          <div className="mt-2 h-1 overflow-hidden rounded-full bg-bg-elevated">
+            <div
+              className={cn(
+                'h-full transition-all duration-300',
+                effectiveUsed >= quota ? 'bg-red-400' : 'bg-accent',
+              )}
+              style={{
+                width: `${Math.min(100, (effectiveUsed / Math.max(1, quota)) * 100)}%`,
+              }}
+            />
+          </div>
+        )}
+        {quota !== null && effectiveUsed >= quota && (
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <p className="flex items-center gap-1.5 text-xs text-red-300">
+              <AlertCircle size={12} />
+              Quota épuisé ce mois.
+            </p>
+            <div className="flex gap-2">
+              <a
+                href="#byok"
+                onClick={(e) => {
+                  e.preventDefault();
+                  document.querySelector<HTMLInputElement>('input[placeholder^="sk-ant"]')?.focus();
+                }}
+                className="inline-flex items-center gap-1 rounded-md border border-border-subtle px-2 py-1 text-[10px] text-text-secondary hover:border-border-strong hover:text-text-primary"
+              >
+                <Zap size={10} />
+                Activer BYOK
+              </a>
+              <Link
+                to="/pricing"
+                className="inline-flex items-center gap-1 rounded-md bg-accent px-2 py-1 text-[10px] font-medium text-white hover:bg-accent-hover"
+              >
+                Voir les plans
+              </Link>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
