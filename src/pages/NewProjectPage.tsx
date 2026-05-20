@@ -1,12 +1,23 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Sparkles, Loader2 } from 'lucide-react';
+import { Plus, Sparkles, Loader2, AlertTriangle } from 'lucide-react';
 import { SiteCard, type SiteEntry, labelFromDomain } from '@/components/onboarding/SiteCard';
 import { MY_SITE_COLOR, pickNextColor } from '@/lib/colors';
 import {
   createProjectInSupabase,
+  useSupabaseProjects,
   type CreateProjectProgress,
 } from '@/lib/dataLayer';
+import { useAuth } from '@/hooks/useAuth';
+import {
+  checkMaxProjects,
+  checkMaxKeywords,
+  checkMaxCompetitors,
+  PLAN_LIMITS,
+  type LimitResult,
+} from '@/lib/plans';
+import type { UserPlan } from '@/lib/supabaseTypes';
+import { UpgradeModal } from '@/components/UpgradeModal';
 
 function newSite(isMe: boolean, color: string): SiteEntry {
   return {
@@ -22,6 +33,9 @@ function newSite(isMe: boolean, color: string): SiteEntry {
 
 export function NewProjectPage() {
   const navigate = useNavigate();
+  const { profile } = useAuth();
+  const plan: UserPlan = profile?.plan ?? 'free';
+  const { projects: remoteProjects, loading: loadingProjects } = useSupabaseProjects();
 
   const [name, setName] = useState('');
   const [myDomain, setMyDomain] = useState('');
@@ -33,6 +47,16 @@ export function NewProjectPage() {
   const [submitProgress, setSubmitProgress] = useState<CreateProjectProgress | null>(
     null,
   );
+  const [upgradeResult, setUpgradeResult] = useState<LimitResult | null>(null);
+
+  // Limites par plan : pré-calculées pour bandeaux + hints inline.
+  const projectLimitCheck = useMemo(
+    () => (loadingProjects ? null : checkMaxProjects(plan, remoteProjects.length)),
+    [plan, remoteProjects.length, loadingProjects],
+  );
+  const competitorLimit = PLAN_LIMITS[plan].maxCompetitorsPerProject;
+  const keywordLimit = PLAN_LIMITS[plan].maxKeywordsPerProject;
+  const atProjectLimit = projectLimitCheck !== null && !projectLimitCheck.allowed;
 
   const usedColors = useMemo(
     () => [mySite.color, ...competitors.map((c) => c.color)],
@@ -60,6 +84,11 @@ export function NewProjectPage() {
   };
 
   const addCompetitor = () => {
+    const check = checkMaxCompetitors(plan, competitors.length);
+    if (!check.allowed) {
+      setUpgradeResult(check);
+      return;
+    }
     const color = pickNextColor(usedColors);
     setCompetitors((cs) => [...cs, newSite(false, color)]);
   };
@@ -79,6 +108,26 @@ export function NewProjectPage() {
 
   const onSubmit = async () => {
     if (!canSubmit) return;
+
+    // Re-check les limites au submit (état projets peut avoir changé pendant
+    // la saisie, et on n'a pas pré-bloqué le total de KWs avant cet instant).
+    const projectCheck = checkMaxProjects(plan, remoteProjects.length);
+    if (!projectCheck.allowed) {
+      setUpgradeResult(projectCheck);
+      return;
+    }
+    const kwCheck = checkMaxKeywords(plan, 0, totalKeywords);
+    if (!kwCheck.allowed) {
+      setUpgradeResult(kwCheck);
+      return;
+    }
+    // Pour les concurrents, on vérifie que le count saisi ne dépasse pas
+    // la limite (peut arriver si l'utilisateur change de plan en cours).
+    if (competitorLimit !== null && competitors.length > competitorLimit) {
+      setUpgradeResult(checkMaxCompetitors(plan, competitorLimit));
+      return;
+    }
+
     setSubmitting(true);
 
     try {
@@ -122,6 +171,26 @@ export function NewProjectPage() {
           Définis ton site, ajoute tes concurrents, importe les CSVs. L'analyse est lancée à la fin.
         </p>
       </header>
+
+      {atProjectLimit && projectLimitCheck && (
+        <div className="mb-6 flex items-start gap-3 rounded-lg border border-amber-400/40 bg-amber-400/10 p-4 text-sm">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-400" />
+          <div className="flex-1">
+            <p className="font-medium text-amber-200">{projectLimitCheck.message}</p>
+            <p className="mt-1 text-xs text-amber-200/80">
+              Tu peux remplir le formulaire pour t'organiser, mais la création sera bloquée
+              tant que tu n'as pas upgradé ou supprimé un projet existant.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setUpgradeResult(projectLimitCheck)}
+            className="rounded-md border border-amber-400/50 px-2.5 py-1 text-xs font-medium text-amber-100 hover:bg-amber-400/20"
+          >
+            Voir les plans
+          </button>
+        </div>
+      )}
 
       <section className="rounded-lg border border-border-subtle bg-bg-surface p-5">
         <h2 className="mb-4 text-sm font-semibold">Informations</h2>
@@ -181,7 +250,10 @@ export function NewProjectPage() {
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold">
             Concurrents{' '}
-            <span className="text-text-muted font-normal">({competitors.length})</span>
+            <span className="text-text-muted font-normal">
+              ({competitors.length}
+              {competitorLimit !== null && ` / ${competitorLimit}`})
+            </span>
           </h2>
           <button
             type="button"
@@ -225,12 +297,26 @@ export function NewProjectPage() {
             </span>
           ) : totalKeywords > 0 ? (
             <>
-              <span className="font-mono text-text-primary">{totalKeywords}</span> mots-clés au total,
-              répartis sur{' '}
+              <span
+                className={
+                  keywordLimit !== null && totalKeywords > keywordLimit
+                    ? 'font-mono text-red-400'
+                    : 'font-mono text-text-primary'
+                }
+              >
+                {totalKeywords}
+              </span>{' '}
+              {keywordLimit !== null && (
+                <span className="text-text-muted">/ {keywordLimit.toLocaleString('fr-FR')}</span>
+              )}{' '}
+              mots-clés, répartis sur{' '}
               <span className="font-mono text-text-primary">
                 {1 + competitors.length}
               </span>{' '}
               site{competitors.length > 0 ? 's' : ''}.
+              {keywordLimit !== null && totalKeywords > keywordLimit && (
+                <span className="ml-1 text-red-400">Au-dessus de la limite de ton plan.</span>
+              )}
             </>
           ) : (
             'Aucun CSV importé pour l\'instant.'
@@ -246,6 +332,13 @@ export function NewProjectPage() {
           {submitting ? 'Sauvegarde…' : 'Lancer l\'analyse'}
         </button>
       </footer>
+
+      <UpgradeModal
+        open={upgradeResult !== null}
+        onClose={() => setUpgradeResult(null)}
+        result={upgradeResult}
+        currentPlan={plan}
+      />
     </div>
   );
 }
