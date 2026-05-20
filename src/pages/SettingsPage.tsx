@@ -15,6 +15,8 @@ import {
   KeyRound,
   Cloud,
   Zap,
+  ChevronDown,
+  Wrench,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useSettings } from '@/lib/store';
@@ -32,25 +34,50 @@ import {
 import { PLAN_LIMITS, PLAN_LABELS, shouldResetClusteringsCount } from '@/lib/plans';
 import type { UserPlan } from '@/lib/supabaseTypes';
 
+const ADVANCED_OPEN_LS_KEY = 'stargap-settings-advanced-open';
+
+function useLocalStorageToggle(
+  key: string,
+  defaultValue: boolean,
+): [boolean, (v: boolean) => void] {
+  const [value, setValue] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem(key);
+      if (stored === null) return defaultValue;
+      return stored === 'true';
+    } catch {
+      return defaultValue;
+    }
+  });
+  const set = (v: boolean) => {
+    setValue(v);
+    try {
+      localStorage.setItem(key, String(v));
+    } catch {
+      /* ignore — quota dépassé ou storage désactivé */
+    }
+  };
+  return [value, set];
+}
+
 export function SettingsPage() {
   const apiKey = useSettings((s) => s.apiKey);
-  const setApiKey = useSettings((s) => s.setApiKey);
-  const model = useSettings((s) => s.model);
-  const setModel = useSettings((s) => s.setModel);
+  const [advancedOpen, setAdvancedOpen] = useLocalStorageToggle(
+    ADVANCED_OPEN_LS_KEY,
+    false,
+  );
 
-  const [draft, setDraft] = useState(apiKey ?? '');
-  const [reveal, setReveal] = useState(false);
-  const [savedAt, setSavedAt] = useState<number | null>(null);
-
-  const save = () => {
-    setApiKey(draft.trim() || null);
-    setSavedAt(Date.now());
-  };
-
-  const clear = () => {
-    setDraft('');
-    setApiKey(null);
-    setSavedAt(Date.now());
+  // Le CTA "Activer BYOK" dans ClusteringModeSection a besoin d'ouvrir la
+  // section avancée si elle est fermée, puis de focus l'input BYOK. On lift
+  // la logique ici pour avoir accès à advancedOpen.
+  const requestActivateBYOK = () => {
+    setAdvancedOpen(true);
+    // Laisse React render le champ avant de tenter le focus.
+    setTimeout(() => {
+      document
+        .querySelector<HTMLInputElement>('input[placeholder^="sk-ant"]')
+        ?.focus();
+    }, 60);
   };
 
   return (
@@ -59,91 +86,173 @@ export function SettingsPage() {
 
       <AccountSection />
 
-      <ClusteringModeSection hasOwnApiKey={Boolean(apiKey)} />
-
-      <section className="mt-6 space-y-3 rounded-lg border border-border-subtle bg-bg-surface p-5">
-        <div>
-          <h2 className="text-sm font-semibold">Clé API Anthropic (BYOK)</h2>
-          <p className="mt-1 text-xs text-text-secondary">
-            Ta clé est stockée localement (localStorage) et utilisée pour appeler Claude
-            directement depuis ton navigateur. Elle ne transite par aucun serveur tiers.
-            Quand une clé est renseignée, le clustering passe en mode BYOK et n'est plus
-            compté dans ton quota.
-          </p>
-        </div>
-
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <input
-              type={reveal ? 'text' : 'password'}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder="sk-ant-..."
-              className="w-full rounded-md border border-border-subtle bg-bg-base px-3 py-2 pr-10 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
-              autoComplete="off"
-              spellCheck={false}
-            />
-            <button
-              type="button"
-              onClick={() => setReveal((r) => !r)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-text-muted hover:text-text-primary"
-              aria-label={reveal ? 'Masquer' : 'Afficher'}
-            >
-              {reveal ? <EyeOff size={16} /> : <Eye size={16} />}
-            </button>
-          </div>
-          <button
-            type="button"
-            onClick={save}
-            className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-2 text-sm font-medium text-white hover:bg-accent-hover"
-          >
-            <Save size={14} />
-            Enregistrer
-          </button>
-          {apiKey && (
-            <button
-              type="button"
-              onClick={clear}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle px-3 py-2 text-sm text-text-secondary hover:border-border-strong hover:text-text-primary"
-            >
-              <Trash2 size={14} />
-              Effacer
-            </button>
-          )}
-        </div>
-
-        {savedAt && (
-          <p className="text-xs text-text-muted">Enregistré.</p>
-        )}
-      </section>
-
-      <section className="mt-6 space-y-3 rounded-lg border border-border-subtle bg-bg-surface p-5">
-        <div>
-          <h2 className="text-sm font-semibold">Modèle de clustering (BYOK)</h2>
-          <p className="mt-1 text-xs text-text-secondary">
-            Sonnet 4.6 recommandé pour le naming des clusters. Haiku si tu veux économiser.
-            <span className="block mt-1 text-text-muted">
-              Ce choix ne s'applique qu'au mode BYOK. En mode managé, le modèle dépend de ton plan
-              (Haiku pour Free, Sonnet pour Pro/Agency).
-            </span>
-          </p>
-        </div>
-        <select
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          disabled={!apiKey}
-          className="rounded-md border border-border-subtle bg-bg-base px-3 py-2 font-mono text-sm focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <option value="claude-sonnet-4-6">claude-sonnet-4-6 (recommandé)</option>
-          <option value="claude-haiku-4-5-20251001">claude-haiku-4-5</option>
-          <option value="claude-opus-4-7">claude-opus-4-7</option>
-        </select>
-      </section>
+      <ClusteringModeSection
+        hasOwnApiKey={Boolean(apiKey)}
+        onActivateBYOK={requestActivateBYOK}
+      />
 
       <MigrationSection />
 
-      <ClusterCacheSection />
+      <AdvancedSection open={advancedOpen} onToggle={() => setAdvancedOpen(!advancedOpen)}>
+        <BYOKSection />
+        <ModelSection />
+        <ClusterCacheSection />
+      </AdvancedSection>
     </div>
+  );
+}
+
+// ============================================================================
+// Options avancées (collapsible, persisté en localStorage)
+// ============================================================================
+
+function AdvancedSection({
+  open,
+  onToggle,
+  children,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="mt-8">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between rounded-lg border border-border-subtle bg-bg-surface px-5 py-3 text-left transition-colors hover:border-border-strong"
+      >
+        <div className="flex items-center gap-2.5">
+          <Wrench size={14} className="text-text-muted" />
+          <span className="text-sm font-semibold">Options avancées</span>
+          <span className="text-[10px] uppercase tracking-wider text-text-muted">
+            BYOK · modèle · cache
+          </span>
+        </div>
+        <ChevronDown
+          size={14}
+          className={cn(
+            'text-text-muted transition-transform',
+            open && 'rotate-180',
+          )}
+        />
+      </button>
+      {open && <div className="mt-3 space-y-6">{children}</div>}
+    </section>
+  );
+}
+
+// ============================================================================
+// BYOK (clé API Anthropic perso)
+// ============================================================================
+
+function BYOKSection() {
+  const apiKey = useSettings((s) => s.apiKey);
+  const setApiKey = useSettings((s) => s.setApiKey);
+  const [draft, setDraft] = useState(apiKey ?? '');
+  const [reveal, setReveal] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+
+  const save = () => {
+    setApiKey(draft.trim() || null);
+    setSavedAt(Date.now());
+  };
+  const clear = () => {
+    setDraft('');
+    setApiKey(null);
+    setSavedAt(Date.now());
+  };
+
+  return (
+    <section className="space-y-3 rounded-lg border border-border-subtle bg-bg-surface p-5">
+      <div>
+        <h2 className="text-sm font-semibold">Clé API Anthropic (BYOK)</h2>
+        <p className="mt-1 text-xs text-text-secondary">
+          Ta clé est stockée localement (localStorage) et utilisée pour appeler Claude
+          directement depuis ton navigateur. Elle ne transite par aucun serveur tiers.
+          Quand une clé est renseignée, le clustering passe en mode BYOK et n'est plus
+          compté dans ton quota.
+        </p>
+      </div>
+
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <input
+            type={reveal ? 'text' : 'password'}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="sk-ant-..."
+            className="w-full rounded-md border border-border-subtle bg-bg-base px-3 py-2 pr-10 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <button
+            type="button"
+            onClick={() => setReveal((r) => !r)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-text-muted hover:text-text-primary"
+            aria-label={reveal ? 'Masquer' : 'Afficher'}
+          >
+            {reveal ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
+        </div>
+        <button
+          type="button"
+          onClick={save}
+          className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-2 text-sm font-medium text-white hover:bg-accent-hover"
+        >
+          <Save size={14} />
+          Enregistrer
+        </button>
+        {apiKey && (
+          <button
+            type="button"
+            onClick={clear}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle px-3 py-2 text-sm text-text-secondary hover:border-border-strong hover:text-text-primary"
+          >
+            <Trash2 size={14} />
+            Effacer
+          </button>
+        )}
+      </div>
+
+      {savedAt && <p className="text-xs text-text-muted">Enregistré.</p>}
+    </section>
+  );
+}
+
+// ============================================================================
+// Modèle Claude (BYOK uniquement)
+// ============================================================================
+
+function ModelSection() {
+  const apiKey = useSettings((s) => s.apiKey);
+  const model = useSettings((s) => s.model);
+  const setModel = useSettings((s) => s.setModel);
+
+  return (
+    <section className="space-y-3 rounded-lg border border-border-subtle bg-bg-surface p-5">
+      <div>
+        <h2 className="text-sm font-semibold">Modèle de clustering (BYOK)</h2>
+        <p className="mt-1 text-xs text-text-secondary">
+          Sonnet 4.6 recommandé pour le naming des clusters. Haiku si tu veux économiser.
+          <span className="mt-1 block text-text-muted">
+            Ce choix ne s'applique qu'au mode BYOK. En mode managé, le modèle dépend de ton plan
+            (Haiku pour Free, Sonnet pour Pro/Agency).
+          </span>
+        </p>
+      </div>
+      <select
+        value={model}
+        onChange={(e) => setModel(e.target.value)}
+        disabled={!apiKey}
+        className="rounded-md border border-border-subtle bg-bg-base px-3 py-2 font-mono text-sm focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <option value="claude-sonnet-4-6">claude-sonnet-4-6 (recommandé)</option>
+        <option value="claude-haiku-4-5-20251001">claude-haiku-4-5</option>
+        <option value="claude-opus-4-7">claude-opus-4-7</option>
+      </select>
+    </section>
   );
 }
 
@@ -151,7 +260,13 @@ export function SettingsPage() {
 // Mode clustering (BYOK vs managé) + quota (étape 3c)
 // ============================================================================
 
-function ClusteringModeSection({ hasOwnApiKey }: { hasOwnApiKey: boolean }) {
+function ClusteringModeSection({
+  hasOwnApiKey,
+  onActivateBYOK,
+}: {
+  hasOwnApiKey: boolean;
+  onActivateBYOK: () => void;
+}) {
   const { profile, status } = useAuth();
   if (status !== 'authenticated' || !profile) return null;
 
@@ -261,17 +376,14 @@ function ClusteringModeSection({ hasOwnApiKey }: { hasOwnApiKey: boolean }) {
               Quota épuisé ce mois.
             </p>
             <div className="flex gap-2">
-              <a
-                href="#byok"
-                onClick={(e) => {
-                  e.preventDefault();
-                  document.querySelector<HTMLInputElement>('input[placeholder^="sk-ant"]')?.focus();
-                }}
+              <button
+                type="button"
+                onClick={onActivateBYOK}
                 className="inline-flex items-center gap-1 rounded-md border border-border-subtle px-2 py-1 text-[10px] text-text-secondary hover:border-border-strong hover:text-text-primary"
               >
                 <Zap size={10} />
                 Activer BYOK
-              </a>
+              </button>
               <Link
                 to="/pricing"
                 className="inline-flex items-center gap-1 rounded-md bg-accent px-2 py-1 text-[10px] font-medium text-white hover:bg-accent-hover"
