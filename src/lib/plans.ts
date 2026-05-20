@@ -15,6 +15,9 @@ export interface PlanLimits {
   csvExport: boolean;
   // Cosmétique : watermark "Star Gap Free" visible sur le graph
   watermark: boolean;
+  // Modèle Claude utilisé en mode managé (= sans BYOK, via Edge Function).
+  // En BYOK, le user choisit son modèle dans Settings.
+  managedModel: string;
 }
 
 export const PLAN_LIMITS: Record<UserPlan, PlanLimits> = {
@@ -26,6 +29,7 @@ export const PLAN_LIMITS: Record<UserPlan, PlanLimits> = {
     tableRowsVisible: 20,
     csvExport: false,
     watermark: true,
+    managedModel: 'claude-haiku-4-5-20251001',
   },
   pro: {
     maxProjects: 5,
@@ -35,6 +39,7 @@ export const PLAN_LIMITS: Record<UserPlan, PlanLimits> = {
     tableRowsVisible: null,
     csvExport: true,
     watermark: false,
+    managedModel: 'claude-sonnet-4-20250514',
   },
   agency: {
     maxProjects: null,
@@ -44,6 +49,7 @@ export const PLAN_LIMITS: Record<UserPlan, PlanLimits> = {
     tableRowsVisible: null,
     csvExport: true,
     watermark: false,
+    managedModel: 'claude-sonnet-4-20250514',
   },
 };
 
