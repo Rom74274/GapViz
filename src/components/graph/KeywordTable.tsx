@@ -1,6 +1,10 @@
 import { useMemo, useState } from 'react';
-import { ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle, Lock } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import type { KeywordNode } from './graphLayout';
+import { useAuth } from '@/hooks/useAuth';
+import { PLAN_LIMITS, PLAN_LABELS } from '@/lib/plans';
+import type { UserPlan } from '@/lib/supabaseTypes';
 import { cn } from '@/lib/utils';
 
 type SortKey =
@@ -70,6 +74,10 @@ export function KeywordTable({
 }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('volume');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+
+  const { profile } = useAuth();
+  const plan: UserPlan = profile?.plan ?? 'free';
+  const rowLimit = PLAN_LIMITS[plan].tableRowsVisible;
 
   const rows = useMemo(() => {
     const r = visibleKws.map(buildRow);
@@ -173,29 +181,34 @@ export function KeywordTable({
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => {
+            {rows.map((r, i) => {
               const checked = selectedIds.has(r.kwId);
+              const isBlurred = rowLimit !== null && i >= rowLimit;
               return (
                 <tr
                   key={r.kwId}
-                  onClick={() => onRowClick(r.kwId)}
+                  onClick={isBlurred ? undefined : () => onRowClick(r.kwId)}
                   className={cn(
-                    'cursor-pointer border-b border-border-subtle/40 hover:bg-bg-elevated/40',
+                    'border-b border-border-subtle/40',
+                    !isBlurred && 'cursor-pointer hover:bg-bg-elevated/40',
+                    isBlurred && 'pointer-events-none select-none [filter:blur(4px)] opacity-60',
                     r.isGap && 'bg-amber-500/[0.04]',
                     checked && 'bg-accent/10',
                   )}
+                  aria-hidden={isBlurred || undefined}
                 >
                   <td
                     className="px-3 py-1.5"
                     onClick={(e) => {
                       e.stopPropagation();
-                      toggleOne(r.kwId);
+                      if (!isBlurred) toggleOne(r.kwId);
                     }}
                   >
                     <input
                       type="checkbox"
                       checked={checked}
                       onChange={() => toggleOne(r.kwId)}
+                      disabled={isBlurred}
                       className="cursor-pointer"
                       aria-label={`Sélectionner ${r.keyword}`}
                     />
@@ -238,6 +251,28 @@ export function KeywordTable({
         {rows.length === 0 && (
           <div className="flex items-center justify-center p-10 text-text-muted">
             Aucune ligne avec les filtres actuels.
+          </div>
+        )}
+        {rowLimit !== null && rows.length > rowLimit && (
+          <div className="sticky bottom-0 z-10 border-t border-amber-400/40 bg-bg-surface/95 px-5 py-3 backdrop-blur">
+            <div className="flex items-center justify-between gap-3">
+              <p className="flex items-center gap-2 text-xs text-amber-200">
+                <Lock size={12} className="text-amber-400" />
+                <span>
+                  <strong>{rows.length - rowLimit}</strong> mot
+                  {rows.length - rowLimit > 1 ? 's' : ''}-clé
+                  {rows.length - rowLimit > 1 ? 's' : ''} masqué
+                  {rows.length - rowLimit > 1 ? 's' : ''} — plan {PLAN_LABELS[plan]} limité à{' '}
+                  {rowLimit} lignes visibles.
+                </span>
+              </p>
+              <Link
+                to="/pricing"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover"
+              >
+                Voir les plans
+              </Link>
+            </div>
           </div>
         )}
       </div>

@@ -23,6 +23,8 @@ import { SearchBar } from './SearchBar';
 import { useProjectFilters } from '@/lib/filterStore';
 import { computeNodeVisibility } from '@/lib/filterLogic';
 import { globalTransformRef } from '@/lib/transformRef';
+import { useAuth } from '@/hooks/useAuth';
+import { PLAN_LIMITS } from '@/lib/plans';
 
 interface Props {
   projectId: string;
@@ -90,6 +92,9 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
   const [showLabels, setShowLabels] = useState(true);
   const [showGlow, setShowGlow] = useState(true);
   const [searchMatchIds, setSearchMatchIds] = useState<Set<string> | null>(null);
+
+  const { profile } = useAuth();
+  const showWatermark = PLAN_LIMITS[profile?.plan ?? 'free'].watermark;
 
   const selectedId = selectedKeywordId ?? null;
   const setSelectedId = (id: string | null) => onSelectKeyword?.(id);
@@ -626,6 +631,11 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
             </p>
           </div>
         </Overlay>
+      )}
+      {showWatermark && (
+        <span className="pointer-events-none absolute bottom-3 right-4 select-none font-mono text-[10px] uppercase tracking-wider text-text-muted/40">
+          Star Gap Free
+        </span>
       )}
     </div>
   );
