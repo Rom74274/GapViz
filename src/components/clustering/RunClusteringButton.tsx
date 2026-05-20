@@ -24,6 +24,11 @@ import {
   type ClusterRunResult,
   type ClusterRunProgress,
 } from '@/lib/clustering';
+import { useAuth } from '@/hooks/useAuth';
+import { checkRunClustering, type LimitResult } from '@/lib/plans';
+import type { UserPlan } from '@/lib/supabaseTypes';
+import { incrementClusteringsUsed } from '@/lib/usage';
+import { UpgradeModal } from '@/components/UpgradeModal';
 import { cn } from '@/lib/utils';
 
 interface Props {
@@ -34,6 +39,8 @@ interface Props {
 export function RunClusteringButton({ projectId, variant = 'card' }: Props) {
   const apiKey = useSettings((s) => s.apiKey);
   const model = useSettings((s) => s.model);
+  const { profile } = useAuth();
+  const plan: UserPlan = profile?.plan ?? 'free';
 
   const existingClusterCount = useLiveQuery(
     () => db.clusters.where('projectId').equals(projectId).count(),
@@ -45,12 +52,20 @@ export function RunClusteringButton({ projectId, variant = 'card' }: Props) {
   const [result, setResult] = useState<ClusterRunResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<ClusterRunProgress | null>(null);
+  const [upgradeResult, setUpgradeResult] = useState<LimitResult | null>(null);
 
   useEffect(() => {
     uniqueKeywordCount(projectId).then(setKwCount);
   }, [projectId, existingClusterCount]);
 
   const run = async (force: boolean) => {
+    // Pre-check : la gate ne bloque qu'en mode managé (pas de BYOK).
+    // BYOK = utilisateur paie sa propre clé Claude, donc illimité.
+    const gate = checkRunClustering(plan, !!apiKey, profile?.clusterings_used ?? 0);
+    if (!gate.allowed) {
+      setUpgradeResult(gate);
+      return;
+    }
     if (!apiKey) return;
     setStatus('running');
     setError(null);
@@ -64,6 +79,14 @@ export function RunClusteringButton({ projectId, variant = 'card' }: Props) {
       });
       setResult(r);
       setStatus('done');
+      // Stat : on incrémente le compteur en background (n'attend pas l'UI).
+      // Le reset rolling 30j est géré dans incrementClusteringsUsed.
+      // Si depuis le cache, l'appel Claude n'a pas eu lieu — pas d'increment.
+      if (!r.fromCache) {
+        incrementClusteringsUsed().catch((e) =>
+          console.error('[clustering] increment usage failed (non-blocking)', e),
+        );
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur inconnue');
       setStatus('error');
@@ -82,19 +105,27 @@ export function RunClusteringButton({ projectId, variant = 'card' }: Props) {
 
   if (variant === 'compact') {
     return (
-      <CompactView
-        apiKey={apiKey}
-        kwCount={kwCount}
-        model={model}
-        status={status}
-        result={result}
-        error={error}
-        progress={progress}
-        hasExisting={(existingClusterCount ?? 0) > 0}
-        onRun={() => run(false)}
-        onForceRun={() => run(true)}
-        onClearCache={clearCache}
-      />
+      <>
+        <CompactView
+          apiKey={apiKey}
+          kwCount={kwCount}
+          model={model}
+          status={status}
+          result={result}
+          error={error}
+          progress={progress}
+          hasExisting={(existingClusterCount ?? 0) > 0}
+          onRun={() => run(false)}
+          onForceRun={() => run(true)}
+          onClearCache={clearCache}
+        />
+        <UpgradeModal
+          open={upgradeResult !== null}
+          onClose={() => setUpgradeResult(null)}
+          result={upgradeResult}
+          currentPlan={plan}
+        />
+      </>
     );
   }
 
@@ -134,32 +165,40 @@ export function RunClusteringButton({ projectId, variant = 'card' }: Props) {
   const hasExisting = (existingClusterCount ?? 0) > 0;
 
   return (
-    <Card>
-      <Sparkles size={18} className="text-accent" />
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-baseline gap-3">
-          <p className="text-sm">
-            <span className="font-mono">{kwCount}</span> mots-clés uniques à clusteriser
-          </p>
-          <span className="font-mono text-xs text-text-muted">
-            estimé ~{formatUSD(estimate.usd)} · {model}
-            {estimate.chunks > 1 && (
-              <span className="ml-1.5 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300">
-                chunked · {estimate.chunks} appels
-              </span>
-            )}
-          </span>
+    <>
+      <Card>
+        <Sparkles size={18} className="text-accent" />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-3">
+            <p className="text-sm">
+              <span className="font-mono">{kwCount}</span> mots-clés uniques à clusteriser
+            </p>
+            <span className="font-mono text-xs text-text-muted">
+              estimé ~{formatUSD(estimate.usd)} · {model}
+              {estimate.chunks > 1 && (
+                <span className="ml-1.5 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300">
+                  chunked · {estimate.chunks} appels
+                </span>
+              )}
+            </span>
+          </div>
+          <StatusLine status={status} result={result} error={error} progress={progress} />
         </div>
-        <StatusLine status={status} result={result} error={error} progress={progress} />
-      </div>
-      <SplitButton
-        onPrimary={() => run(false)}
-        onForce={() => run(true)}
-        onClearCache={clearCache}
-        status={status}
-        hasExisting={hasExisting}
+        <SplitButton
+          onPrimary={() => run(false)}
+          onForce={() => run(true)}
+          onClearCache={clearCache}
+          status={status}
+          hasExisting={hasExisting}
+        />
+      </Card>
+      <UpgradeModal
+        open={upgradeResult !== null}
+        onClose={() => setUpgradeResult(null)}
+        result={upgradeResult}
+        currentPlan={plan}
       />
-    </Card>
+    </>
   );
 }
 
