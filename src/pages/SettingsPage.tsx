@@ -17,12 +17,14 @@ import {
   Zap,
   ChevronDown,
   Wrench,
+  CreditCard,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useSettings } from '@/lib/store';
 import { clearAllClusterCache, getCacheStats } from '@/lib/clustering';
 import { useAuth } from '@/hooks/useAuth';
 import { signOut } from '@/lib/authStore';
+import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import {
   listMigratableProjects,
@@ -579,10 +581,12 @@ function progressLabel(p: MigrationProgress): string {
 function AccountSection() {
   const { user, profile, status } = useAuth();
   const [signingOut, setSigningOut] = useState(false);
+  const [portalLoading, setPortalLoading] = useState(false);
 
   if (status !== 'authenticated' || !user) return null;
 
   const planLabel = profile?.plan ?? 'free';
+  const hasSubscription = Boolean(profile?.stripe_customer_id);
   const planColor =
     planLabel === 'agency'
       ? 'bg-purple-500/15 text-purple-300 border-purple-500/40'
@@ -593,7 +597,21 @@ function AccountSection() {
   const onSignOut = async () => {
     setSigningOut(true);
     await signOut();
-    // L'AuthGuard redirige vers /login automatiquement.
+  };
+
+  const openPortal = async () => {
+    setPortalLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('create-portal-session');
+      if (error) throw error;
+      const url = (data as { url?: string })?.url;
+      if (url) window.location.href = url;
+    } catch (e) {
+      console.error('[settings] portal error', e);
+      alert('Impossible d\'ouvrir le portail Stripe : ' + (e instanceof Error ? e.message : 'erreur'));
+    } finally {
+      setPortalLoading(false);
+    }
   };
 
   return (
@@ -624,19 +642,41 @@ function AccountSection() {
         </span>
       </div>
 
-      <button
-        type="button"
-        onClick={onSignOut}
-        disabled={signingOut}
-        className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle px-3 py-1.5 text-xs text-text-secondary transition-colors hover:border-red-400/60 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {signingOut ? (
-          <Loader2 size={12} className="animate-spin" />
-        ) : (
-          <LogOut size={12} />
+      <div className="flex flex-wrap gap-2">
+        {hasSubscription && (
+          <button
+            type="button"
+            onClick={openPortal}
+            disabled={portalLoading}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle px-3 py-1.5 text-xs text-text-secondary transition-colors hover:border-accent/60 hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {portalLoading ? <Loader2 size={12} className="animate-spin" /> : <CreditCard size={12} />}
+            Gérer mon abonnement
+          </button>
         )}
-        Se déconnecter
-      </button>
+        {!hasSubscription && planLabel === 'free' && (
+          <Link
+            to="/pricing"
+            className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover"
+          >
+            <CreditCard size={12} />
+            Upgrader
+          </Link>
+        )}
+        <button
+          type="button"
+          onClick={onSignOut}
+          disabled={signingOut}
+          className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle px-3 py-1.5 text-xs text-text-secondary transition-colors hover:border-red-400/60 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {signingOut ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : (
+            <LogOut size={12} />
+          )}
+          Se déconnecter
+        </button>
+      </div>
     </section>
   );
 }

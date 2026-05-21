@@ -20,6 +20,9 @@ export type SupabaseProfile = {
   // clusterings_reset_at. Cf. étape 2 du brief SaaS.
   clusterings_used: number;
   clusterings_reset_at: string;
+  // Stripe — ajoutés à l'étape 4 (Stripe checkout + webhook).
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
   created_at: string;
   updated_at: string;
 };

@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Check, Minus, ArrowLeft, Mail } from 'lucide-react';
+import { Check, Minus, ArrowLeft, Loader2, CreditCard } from 'lucide-react';
 import { PLAN_LABELS, PLAN_LIMITS } from '@/lib/plans';
 import type { UserPlan } from '@/lib/supabaseTypes';
 import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 
 const PLAN_ORDER: UserPlan[] = ['free', 'pro', 'agency'];
@@ -15,8 +17,8 @@ const PLAN_BLURB: Record<UserPlan, string> = {
 
 const PLAN_PRICE: Record<UserPlan, string> = {
   free: '0€',
-  pro: 'Contact',
-  agency: 'Contact',
+  pro: '19€',
+  agency: '79€',
 };
 
 // On affiche les limites sous forme lisible pour humains.
@@ -29,6 +31,27 @@ export function PricingPage() {
   const { profile, status } = useAuth();
   const currentPlan: UserPlan = profile?.plan ?? 'free';
   const isAuth = status === 'authenticated';
+  const [loadingPlan, setLoadingPlan] = useState<UserPlan | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const startCheckout = async (plan: UserPlan) => {
+    setLoadingPlan(plan);
+    setError(null);
+    try {
+      const { data, error: fnErr } = await supabase.functions.invoke(
+        'create-checkout-session',
+        { body: { plan } },
+      );
+      if (fnErr) throw fnErr;
+      const url = (data as { url?: string })?.url;
+      if (!url) throw new Error('Pas d\'URL Stripe reçue');
+      window.location.href = url;
+    } catch (e) {
+      console.error('[pricing] checkout error', e);
+      setError(e instanceof Error ? e.message : 'Erreur checkout');
+      setLoadingPlan(null);
+    }
+  };
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-10">
@@ -133,17 +156,19 @@ export function PricingPage() {
                   Plan actuel
                 </button>
               ) : isUpgrade ? (
-                <a
-                  href={`mailto:contact@stargap.io?subject=${encodeURIComponent(
-                    `Upgrade vers ${PLAN_LABELS[plan]}`,
-                  )}&body=${encodeURIComponent(
-                    `Bonjour, je souhaite upgrader vers le plan ${PLAN_LABELS[plan]}.\n\nMon email : ${profile?.email ?? ''}`,
-                  )}`}
-                  className="mt-4 inline-flex items-center justify-center gap-1.5 rounded-md bg-accent px-3 py-2 text-sm font-medium text-white hover:bg-accent-hover"
+                <button
+                  type="button"
+                  onClick={() => startCheckout(plan)}
+                  disabled={loadingPlan !== null}
+                  className="mt-4 inline-flex items-center justify-center gap-1.5 rounded-md bg-accent px-3 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <Mail size={14} />
-                  Contacter pour upgrade
-                </a>
+                  {loadingPlan === plan ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <CreditCard size={14} />
+                  )}
+                  {loadingPlan === plan ? 'Redirection…' : `Passer au ${PLAN_LABELS[plan]}`}
+                </button>
               ) : (
                 <span className="mt-4 inline-flex items-center justify-center rounded-md border border-border-subtle px-3 py-2 text-xs text-text-muted">
                   Inférieur à ton plan actuel
@@ -154,8 +179,14 @@ export function PricingPage() {
         })}
       </div>
 
+      {error && (
+        <p className="mt-4 rounded-md border border-red-400/40 bg-red-400/10 px-3 py-2 text-xs text-red-300">
+          {error}
+        </p>
+      )}
+
       <footer className="mt-8 text-xs text-text-muted">
-        Stripe arrive bientôt. En attendant, écris-nous pour upgrader manuellement.
+        Paiement sécurisé par Stripe. Tu peux annuler à tout moment depuis les réglages.
       </footer>
     </div>
   );
