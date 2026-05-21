@@ -13,7 +13,7 @@
 // Secrets requis :
 //   STRIPE_SECRET_KEY         — pour initialiser le client Stripe
 //   STRIPE_WEBHOOK_SECRET     — whsec_xxx pour vérifier la signature
-//   SUPABASE_SERVICE_ROLE_KEY — pour update profiles sans RLS
+//   SB_SERVICE_ROLE_KEY       — pour update profiles sans RLS (pas SUPABASE_ car réservé par la CLI)
 //   STRIPE_PRICE_PRO          — pour mapper price → plan
 //   STRIPE_PRICE_AGENCY       — idem
 // =============================================================================
@@ -28,7 +28,7 @@ Deno.serve(async (req) => {
 
   const stripeKey = Deno.env.get('STRIPE_SECRET_KEY')!;
   const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET')!;
-  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const serviceRoleKey = Deno.env.get('SB_SERVICE_ROLE_KEY')!;
   if (!stripeKey || !webhookSecret || !serviceRoleKey) {
     console.error('[stripe-webhook] missing secrets');
     return new Response('Server misconfigured', { status: 500 });
