@@ -9,6 +9,9 @@ import { NewProjectPage } from '@/pages/NewProjectPage';
 import { ProjectDetailPage } from '@/pages/ProjectDetailPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { PricingPage } from '@/pages/PricingPage';
+import { LegalPage } from '@/pages/LegalPage';
+import { PrivacyPage } from '@/pages/PrivacyPage';
+import { CgvPage } from '@/pages/CgvPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 import { initAuth } from '@/lib/authStore';
 
@@ -23,8 +26,11 @@ function App() {
       <Starfield />
       <HashRouter>
         <Routes>
-          {/* Route publique : login standalone, pas de Layout. */}
+          {/* Routes publiques : login + legal (pas de Layout). */}
           <Route path="login" element={<LoginPage />} />
+          <Route path="legal" element={<LegalPage />} />
+          <Route path="privacy" element={<PrivacyPage />} />
+          <Route path="cgv" element={<CgvPage />} />
 
           {/* Tout le reste passe par AuthGuard + Layout. */}
           <Route element={<AuthGuard />}>
