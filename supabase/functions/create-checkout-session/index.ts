@@ -5,19 +5,28 @@
 // laquelle le client redirige l'utilisateur.
 //
 // Secrets requis :
-//   STRIPE_SECRET_KEY   — sk_test_xxx ou sk_live_xxx
-//   STRIPE_PRICE_PRO    — price_xxx (19€/mois)
-//   STRIPE_PRICE_AGENCY — price_xxx (79€/mois)
-//   APP_URL             — URL de l'app (ex: https://rom74274.github.io/GapViz)
+//   STRIPE_SECRET_KEY          — sk_test_xxx ou sk_live_xxx
+//   STRIPE_PRICE_PRO           — price_xxx (19€/mois)
+//   STRIPE_PRICE_AGENCY        — price_xxx (79€/mois)
+//   STRIPE_PRICE_PRO_ANNUAL    — price_xxx (182.40€/an, -20%)
+//   STRIPE_PRICE_AGENCY_ANNUAL — price_xxx (758.40€/an, -20%)
+//   APP_URL                    — URL de l'app (ex: https://rom74274.github.io/GapViz)
 // =============================================================================
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@17';
 import { corsHeaders } from '../_shared/cors.ts';
 
-const PLAN_PRICE_MAP: Record<string, string> = {
-  pro: 'STRIPE_PRICE_PRO',
-  agency: 'STRIPE_PRICE_AGENCY',
+// Mapping plan + billing → nom du secret Supabase contenant le price_id.
+const PRICE_SECRET_MAP: Record<string, Record<string, string>> = {
+  monthly: {
+    pro: 'STRIPE_PRICE_PRO',
+    agency: 'STRIPE_PRICE_AGENCY',
+  },
+  annual: {
+    pro: 'STRIPE_PRICE_PRO_ANNUAL',
+    agency: 'STRIPE_PRICE_AGENCY_ANNUAL',
+  },
 };
 
 Deno.serve(async (req) => {
@@ -41,16 +50,18 @@ Deno.serve(async (req) => {
     // 2) Body.
     const body = await req.json().catch(() => ({} as Record<string, unknown>));
     const requestedPlan = body?.plan as string | undefined;
-    if (!requestedPlan || !PLAN_PRICE_MAP[requestedPlan]) {
-      return json({ error: 'plan must be "pro" or "agency"' }, 400);
+    const billing = (body?.billing as string | undefined) ?? 'monthly';
+    if (!requestedPlan || !PRICE_SECRET_MAP[billing]?.[requestedPlan]) {
+      return json({ error: 'plan must be "pro"|"agency", billing "monthly"|"annual"' }, 400);
     }
 
     // 3) Env.
     const stripeKey = Deno.env.get('STRIPE_SECRET_KEY');
-    const priceId = Deno.env.get(PLAN_PRICE_MAP[requestedPlan]!);
+    const priceSecretName = PRICE_SECRET_MAP[billing]![requestedPlan]!;
+    const priceId = Deno.env.get(priceSecretName);
     const appUrl = Deno.env.get('APP_URL');
     if (!stripeKey || !priceId || !appUrl) {
-      return json({ error: 'Stripe secrets not configured' }, 500);
+      return json({ error: `Stripe secret "${priceSecretName}" not configured` }, 500);
     }
 
     const stripe = new Stripe(stripeKey, { apiVersion: '2024-12-18.acacia' });

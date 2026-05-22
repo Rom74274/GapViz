@@ -10,18 +10,35 @@ import { cn } from '@/lib/utils';
 const PLAN_ORDER: UserPlan[] = ['free', 'pro', 'agency'];
 
 const PLAN_BLURB: Record<UserPlan, string> = {
-  free: 'Pour tester l\'outil sur un projet.',
+  free: "Pour tester l'outil sur un projet.",
   pro: 'Pour les SEO indépendants qui jonglent avec plusieurs sites.',
   agency: 'Pour les agences qui gèrent un portefeuille de clients.',
 };
 
-const PLAN_PRICE: Record<UserPlan, string> = {
-  free: '0€',
-  pro: '19€',
-  agency: '79€',
+type BillingPeriod = 'monthly' | 'annual';
+
+const PLAN_PRICE_MONTHLY: Record<UserPlan, number> = {
+  free: 0,
+  pro: 19,
+  agency: 79,
 };
 
-// On affiche les limites sous forme lisible pour humains.
+// -20% sur l'annuel, arrondi au centime.
+const PLAN_PRICE_ANNUAL_MONTHLY: Record<UserPlan, number> = {
+  free: 0,
+  pro: Math.round(19 * 0.8 * 100) / 100, // 15.20
+  agency: Math.round(79 * 0.8 * 100) / 100, // 63.20
+};
+
+function formatPrice(plan: UserPlan, period: BillingPeriod): string {
+  if (plan === 'free') return '0€';
+  const price =
+    period === 'monthly'
+      ? PLAN_PRICE_MONTHLY[plan]
+      : PLAN_PRICE_ANNUAL_MONTHLY[plan];
+  return `${price.toFixed(price % 1 === 0 ? 0 : 2)}€`;
+}
+
 function describeLimit(value: number | null, unit: string): string {
   if (value === null) return 'Illimité';
   return `${value.toLocaleString('fr-FR')} ${unit}`;
@@ -31,6 +48,7 @@ export function PricingPage() {
   const { profile, status } = useAuth();
   const currentPlan: UserPlan = profile?.plan ?? 'free';
   const isAuth = status === 'authenticated';
+  const [billing, setBilling] = useState<BillingPeriod>('monthly');
   const [loadingPlan, setLoadingPlan] = useState<UserPlan | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,11 +58,11 @@ export function PricingPage() {
     try {
       const { data, error: fnErr } = await supabase.functions.invoke(
         'create-checkout-session',
-        { body: { plan } },
+        { body: { plan, billing } },
       );
       if (fnErr) throw fnErr;
       const url = (data as { url?: string })?.url;
-      if (!url) throw new Error('Pas d\'URL Stripe reçue');
+      if (!url) throw new Error("Pas d'URL Stripe reçue");
       window.location.href = url;
     } catch (e) {
       console.error('[pricing] checkout error', e);
@@ -67,10 +85,15 @@ export function PricingPage() {
         )}
         <h1 className="mt-3 text-3xl font-semibold tracking-tight">Plans Star Gap</h1>
         <p className="mt-2 max-w-2xl text-sm text-text-secondary">
-          Le clustering, le graph et les exports — tout dépend de la taille de tes
-          projets. Choisis le plan adapté à ton volume.
+          Le clustering, le graph et les exports — tout dépend de la taille de tes projets.
+          Choisis le plan adapté à ton volume.
         </p>
       </header>
+
+      {/* Toggle mensuel / annuel */}
+      <div className="mb-8 flex items-center justify-center gap-2">
+        <BillingToggle billing={billing} onChange={setBilling} />
+      </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         {PLAN_ORDER.map((plan) => {
@@ -102,12 +125,25 @@ export function PricingPage() {
 
               <p className="mt-2 text-xs text-text-secondary">{PLAN_BLURB[plan]}</p>
 
-              <p className="mt-5 font-mono text-2xl font-semibold">
-                {PLAN_PRICE[plan]}
-                {plan !== 'free' && PLAN_PRICE[plan] !== 'Contact' && (
-                  <span className="text-sm font-normal text-text-muted">/mois</span>
+              <div className="mt-5">
+                <p className="font-mono text-2xl font-semibold">
+                  {formatPrice(plan, billing)}
+                  {plan !== 'free' && (
+                    <span className="text-sm font-normal text-text-muted">/mois</span>
+                  )}
+                </p>
+                {plan !== 'free' && billing === 'annual' && (
+                  <p className="mt-1 text-xs text-green-400">
+                    -20% · Facturé{' '}
+                    {plan === 'pro' ? '182,40' : '758,40'}€/an
+                  </p>
                 )}
-              </p>
+                {plan !== 'free' && billing === 'monthly' && (
+                  <p className="mt-1 text-xs text-text-muted">
+                    ou {formatPrice(plan, 'annual')}/mois en annuel (-20%)
+                  </p>
+                )}
+              </div>
 
               <ul className="mt-6 space-y-2 text-sm">
                 <Feature
@@ -135,13 +171,25 @@ export function PricingPage() {
                   hint="Illimité avec ta propre clé Claude"
                   on
                 />
-                <Feature label="Export CSV" value={limits.csvExport ? 'Oui' : 'Non'} on={limits.csvExport} />
+                <Feature
+                  label="Export CSV"
+                  value={limits.csvExport ? 'Oui' : 'Non'}
+                  on={limits.csvExport}
+                />
                 <Feature
                   label="Vue tableau complète"
-                  value={limits.tableRowsVisible === null ? 'Oui' : `${limits.tableRowsVisible} lignes visibles`}
+                  value={
+                    limits.tableRowsVisible === null
+                      ? 'Oui'
+                      : `${limits.tableRowsVisible} lignes visibles`
+                  }
                   on={limits.tableRowsVisible === null}
                 />
-                <Feature label="Sans watermark" value={limits.watermark ? 'Non' : 'Oui'} on={!limits.watermark} />
+                <Feature
+                  label="Sans watermark"
+                  value={limits.watermark ? 'Non' : 'Oui'}
+                  on={!limits.watermark}
+                />
                 <Feature label="BYOK Claude API" value="Oui" on />
               </ul>
 
@@ -191,6 +239,54 @@ export function PricingPage() {
     </div>
   );
 }
+
+// ============================================================================
+// Billing period toggle
+// ============================================================================
+
+function BillingToggle({
+  billing,
+  onChange,
+}: {
+  billing: BillingPeriod;
+  onChange: (v: BillingPeriod) => void;
+}) {
+  return (
+    <div className="inline-flex items-center rounded-full border border-border-subtle p-0.5">
+      <button
+        type="button"
+        onClick={() => onChange('monthly')}
+        className={cn(
+          'rounded-full px-4 py-1.5 text-xs font-medium transition-colors',
+          billing === 'monthly'
+            ? 'bg-bg-elevated text-text-primary'
+            : 'text-text-muted hover:text-text-secondary',
+        )}
+      >
+        Mensuel
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange('annual')}
+        className={cn(
+          'rounded-full px-4 py-1.5 text-xs font-medium transition-colors',
+          billing === 'annual'
+            ? 'bg-bg-elevated text-text-primary'
+            : 'text-text-muted hover:text-text-secondary',
+        )}
+      >
+        Annuel
+        <span className="ml-1.5 rounded-full bg-green-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-green-400">
+          -20%
+        </span>
+      </button>
+    </div>
+  );
+}
+
+// ============================================================================
+// Feature row
+// ============================================================================
 
 function Feature({
   label,
