@@ -13,6 +13,7 @@ import {
   HardDrive,
 } from 'lucide-react';
 import { db, type Keyword, type Project } from '@/lib/db';
+import { WelcomeOnboarding } from '@/components/onboarding/WelcomeOnboarding';
 import { useSupabaseProjects, purgeProjectFromDexie } from '@/lib/dataLayer';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
@@ -146,16 +147,7 @@ export function HomePage() {
         {localProjects === undefined || remoteLoading ? (
           <EmptyState>Chargement…</EmptyState>
         ) : projects.length === 0 ? (
-          <EmptyState icon={<FolderKanban size={36} className="text-text-muted" />}>
-            <p className="text-text-secondary">Aucun projet pour l'instant.</p>
-            <Link
-              to="/projects/new"
-              className="mt-4 inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover"
-            >
-              <Plus size={16} />
-              Créer mon premier projet
-            </Link>
-          </EmptyState>
+          <WelcomeOnboarding />
         ) : (
           <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {projects.map((p) => (
