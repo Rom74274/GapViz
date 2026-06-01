@@ -37,25 +37,51 @@ const LAYER_CONFIG = [
   { ratio: 0.1, parallax: 0.045, sizeRange: [1.2, 2.6], opRange: [0.35, 0.65], twinkleRatio: 0.3 },
 ] as const;
 
+// Distribution grille jittered : on découpe l'espace en cellules et on
+// place chaque étoile aléatoirement dans sa cellule. Ça élimine les amas
+// visibles que Math.random() pur crée avec quelques centaines de points.
+function jitteredPositions(count: number): Array<{ x: number; y: number }> {
+  const cols = Math.ceil(Math.sqrt(count * 1.1)); // légèrement plus de colonnes que de lignes
+  const rows = Math.ceil(count / cols);
+  const cellW = 100 / cols;
+  const cellH = 100 / rows;
+  const out: Array<{ x: number; y: number }> = [];
+  for (let r = 0; r < rows && out.length < count; r++) {
+    for (let c = 0; c < cols && out.length < count; c++) {
+      out.push({
+        x: c * cellW + Math.random() * cellW,
+        y: r * cellH + Math.random() * cellH,
+      });
+    }
+  }
+  // Shuffle pour que l'ordre ne soit pas en grille (important pour
+  // l'attribution twinkle = les N premiers).
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j]!, out[i]!];
+  }
+  return out;
+}
+
 function buildLayers(total: number): Layer[] {
   return LAYER_CONFIG.map((cfg) => {
     const count = Math.round(total * cfg.ratio);
+    const positions = jitteredPositions(count);
     const stars: Star[] = [];
     for (let i = 0; i < count; i++) {
       const twinkles = i < count * cfg.twinkleRatio;
       stars.push({
-        x: Math.random() * 100,
-        y: Math.random() * 100,
+        x: positions[i]!.x,
+        y: positions[i]!.y,
         size: cfg.sizeRange[0] + Math.random() * (cfg.sizeRange[1] - cfg.sizeRange[0]),
         baseOpacity: cfg.opRange[0] + Math.random() * (cfg.opRange[1] - cfg.opRange[0]),
         twinkles,
         twinkleDuration: 3 + Math.random() * 5,
         twinkleDelay: Math.random() * 6,
-        // Drift : amplitude faible (4–18px), durée longue (40–120s), directions variées.
         driftX: (Math.random() - 0.5) * 2 * (4 + Math.random() * 14),
         driftY: (Math.random() - 0.5) * 2 * (4 + Math.random() * 14),
         driftDuration: 40 + Math.random() * 80,
-        driftDelay: Math.random() * -60, // négatif = démarre à un point aléatoire du cycle
+        driftDelay: Math.random() * -60,
       });
     }
     return { parallax: cfg.parallax, stars };
