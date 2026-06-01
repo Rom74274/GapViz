@@ -7,6 +7,7 @@ import {
   Network,
   ArrowRight,
 } from 'lucide-react';
+import { ArcadeDemo } from '@/components/ArcadeDemo';
 import { cn } from '@/lib/utils';
 
 type CsvSource = 'ahrefs' | 'semrush' | 'gsc';
@@ -136,6 +137,12 @@ export function WelcomeOnboarding() {
             </div>
           </li>
         </ol>
+
+        {/* Démo interactive Arcade */}
+        <div className="mt-8">
+          <p className="mb-3 text-center text-xs text-text-muted">Voir la démo en action</p>
+          <ArcadeDemo />
+        </div>
 
         <div className="mt-8 flex justify-center">
           <Link
