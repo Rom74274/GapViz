@@ -22,13 +22,25 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Starfield twinkle — animation CSS pure (pas de RAF), portée par chaque
-   étoile via la variable --gv-star-op (opacité de base).
+   Starfield — drift individuel (chaque étoile dérive dans sa propre
+   direction via --drift-x / --drift-y) + twinkle (opacité + glow).
    --------------------------------------------------------------------------- */
-@keyframes gv-twinkle {
+
+/* Drift : va-et-vient lent, direction unique par étoile. */
+@keyframes starDrift {
+  from {
+    translate: 0 0;
+  }
+  to {
+    translate: var(--drift-x, 0) var(--drift-y, 0);
+  }
+}
+
+/* Twinkle : opacité pulsée + glow discret au pic. */
+@keyframes starTwinkle {
   0%,
   100% {
-    opacity: var(--gv-star-op, 0.25);
+    opacity: var(--star-op, 0.25);
     box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
   }
   50% {
@@ -38,11 +50,4 @@
       0 0 10px 2px rgba(180, 200, 255, 0.45),
       0 0 18px 4px rgba(180, 200, 255, 0.18);
   }
-}
-
-.gv-twinkle {
-  animation-name: gv-twinkle;
-  animation-iteration-count: infinite;
-  animation-timing-function: ease-in-out;
-  will-change: opacity, box-shadow;
 }
