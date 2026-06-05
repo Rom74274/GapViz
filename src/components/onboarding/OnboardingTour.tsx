@@ -28,17 +28,9 @@ interface Step {
 
 const STEPS: Step[] = [
   {
-    targetId: null,
-    title: 'Bienvenue sur Star Gap',
-    message:
-      'On va créer ton premier projet ensemble. En 4 clics, tu auras ton clustering SEO et la carte de tes gaps.',
-    advance: 'start',
-    placement: 'center',
-  },
-  {
     targetId: 'tour-new-project-btn',
-    title: 'Étape 1 — Crée ton projet',
-    message: 'Clique sur "Nouveau projet" pour démarrer.',
+    title: 'Crée ton premier projet',
+    message: 'Bienvenue ! Clique ici pour démarrer ton premier projet SEO.',
     advance: 'click',
     expectedPath: '/',
     placement: 'bottom',
@@ -87,12 +79,23 @@ const STEPS: Step[] = [
   },
 ];
 
+interface Rect {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+}
+
 export function OnboardingTour() {
   const location = useLocation();
   const [active, setActive] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
-  const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
+  // targetRect = position réelle de la cible (snap dès qu'elle change)
+  // displayedRect = position affichée (lerpée vers targetRect → animation fluide)
+  const [targetRect, setTargetRect] = useState<Rect | null>(null);
+  const [displayedRect, setDisplayedRect] = useState<Rect | null>(null);
   const rafRef = useRef<number | null>(null);
+  const lerpRef = useRef<number | null>(null);
 
   // Au mount : vérifie si on doit lancer le tour.
   useEffect(() => {
@@ -136,11 +139,12 @@ export function OnboardingTour() {
       if (cancelled) return;
       const el = document.querySelector<HTMLElement>(`[data-tour-id="${step.targetId}"]`);
       if (el) {
-        const rect = el.getBoundingClientRect();
+        const r = el.getBoundingClientRect();
+        const next: Rect = { top: r.top, left: r.left, width: r.width, height: r.height };
         setTargetRect((prev) => {
-          if (!prev || prev.top !== rect.top || prev.left !== rect.left ||
-              prev.width !== rect.width || prev.height !== rect.height) {
-            return rect;
+          if (!prev || prev.top !== next.top || prev.left !== next.left ||
+              prev.width !== next.width || prev.height !== next.height) {
+            return next;
           }
           return prev;
         });
@@ -155,6 +159,48 @@ export function OnboardingTour() {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
   }, [active, step]);
+
+  // Lerp displayedRect → targetRect pour une transition fluide entre étapes.
+  // Lerp factor 0.18 → ~0.2-0.3s de glissement, ressenti naturel.
+  useEffect(() => {
+    if (!targetRect) {
+      setDisplayedRect(null);
+      return;
+    }
+    // Si on n'a pas encore de rect affiché (1er step), snap directement.
+    if (!displayedRect) {
+      setDisplayedRect(targetRect);
+      return;
+    }
+    let cancelled = false;
+    const animate = () => {
+      if (cancelled) return;
+      setDisplayedRect((prev) => {
+        if (!prev) return targetRect;
+        const f = 0.18;
+        const next: Rect = {
+          top: prev.top + (targetRect.top - prev.top) * f,
+          left: prev.left + (targetRect.left - prev.left) * f,
+          width: prev.width + (targetRect.width - prev.width) * f,
+          height: prev.height + (targetRect.height - prev.height) * f,
+        };
+        // Si très proche, snap pour éviter les microframes infinies.
+        const close =
+          Math.abs(next.top - targetRect.top) < 0.5 &&
+          Math.abs(next.left - targetRect.left) < 0.5 &&
+          Math.abs(next.width - targetRect.width) < 0.5 &&
+          Math.abs(next.height - targetRect.height) < 0.5;
+        if (close) return targetRect;
+        return next;
+      });
+      lerpRef.current = requestAnimationFrame(animate);
+    };
+    lerpRef.current = requestAnimationFrame(animate);
+    return () => {
+      cancelled = true;
+      if (lerpRef.current !== null) cancelAnimationFrame(lerpRef.current);
+    };
+  }, [targetRect, displayedRect]);
 
   // Si le step attend un clic sur la cible, on intercepte le click au capture.
   useEffect(() => {
@@ -183,11 +229,10 @@ export function OnboardingTour() {
 
   // ----- Rendering -----
 
-  const isWelcome = step.advance === 'start';
   const isFinish = step.advance === 'finish';
 
-  // Centre l'écran (welcome / finish)
-  if (isWelcome || isFinish) {
+  // Modal centré pour le step final uniquement
+  if (isFinish) {
     return (
       <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm">
         <div className="relative max-w-md rounded-2xl border border-accent/30 bg-bg-surface p-8 shadow-2xl">
@@ -206,22 +251,13 @@ export function OnboardingTour() {
             <h2 className="text-lg font-semibold tracking-tight">{step.title}</h2>
           </div>
           <p className="mt-3 text-sm text-text-secondary">{step.message}</p>
-          <div className="mt-6 flex items-center justify-end gap-2">
-            {isWelcome && (
-              <button
-                type="button"
-                onClick={complete}
-                className="rounded-md border border-border-subtle px-3 py-1.5 text-xs text-text-muted hover:border-border-strong hover:text-text-secondary"
-              >
-                Passer le tour
-              </button>
-            )}
+          <div className="mt-6 flex justify-end">
             <button
               type="button"
-              onClick={isFinish ? complete : goNext}
+              onClick={complete}
               className="inline-flex items-center gap-1.5 rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover"
             >
-              {isFinish ? 'Terminer' : 'Commencer'}
+              Terminer
               <ArrowRight size={14} />
             </button>
           </div>
@@ -232,18 +268,18 @@ export function OnboardingTour() {
 
   // Pas la bonne route ou cible non trouvée → on cache (le tour reprendra
   // quand la route et la cible matchent).
-  if (!onCorrectPath || !targetRect) {
+  if (!onCorrectPath || !displayedRect) {
     return (
       <div className="pointer-events-none fixed inset-0 z-[9999] bg-black/30" />
     );
   }
 
-  // Spotlight + tooltip
+  // Spotlight + tooltip (utilise displayedRect = position lerpée animée)
   const padding = 8;
-  const sx = targetRect.left - padding;
-  const sy = targetRect.top - padding;
-  const sw = targetRect.width + padding * 2;
-  const sh = targetRect.height + padding * 2;
+  const sx = displayedRect.left - padding;
+  const sy = displayedRect.top - padding;
+  const sw = displayedRect.width + padding * 2;
+  const sh = displayedRect.height + padding * 2;
 
   // Position du tooltip
   const tooltipPlacement = step.placement ?? 'bottom';
