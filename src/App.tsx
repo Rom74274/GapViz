@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Layout } from '@/components/Layout';
 import { AuthGuard } from '@/components/AuthGuard';
-import { Starfield } from '@/components/Starfield';
 import { HomePage } from '@/pages/HomePage';
 import { LoginPage } from '@/pages/LoginPage';
 import { NewProjectPage } from '@/pages/NewProjectPage';
@@ -22,8 +21,6 @@ function App() {
 
   return (
     <>
-      {/* Starfield global — derrière tout, sur toutes les routes y compris /login. */}
-      <Starfield />
       <HashRouter>
         <Routes>
           {/* Routes publiques : login + legal (pas de Layout). */}

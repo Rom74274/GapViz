@@ -202,7 +202,7 @@ export function NewProjectPage() {
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="ex: Skello FR"
+                placeholder="ex: Mon site FR"
                 className="w-full rounded-md border border-border-subtle bg-bg-base px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
               />
             </label>
@@ -214,7 +214,7 @@ export function NewProjectPage() {
                 type="text"
                 value={myDomain}
                 onChange={(e) => onMyDomainChange(e.target.value)}
-                placeholder="skello.io"
+                placeholder="exemple.com"
                 className="w-full rounded-md border border-border-subtle bg-bg-base px-3 py-1.5 font-mono text-sm focus:border-accent focus:outline-none"
                 autoComplete="off"
                 spellCheck={false}

@@ -5,6 +5,7 @@ import { ArrowLeft, AlertCircle, Network, Table2 } from 'lucide-react';
 import { db } from '@/lib/db';
 import { RunClusteringButton } from '@/components/clustering/RunClusteringButton';
 import { GraphCanvas, type GraphCanvasHandle } from '@/components/graph/GraphCanvas';
+import { Starfield } from '@/components/Starfield';
 import { ClusterPanel } from '@/components/graph/ClusterPanel';
 import { ProjectStats } from '@/components/graph/ProjectStats';
 import { KeywordTable } from '@/components/graph/KeywordTable';
@@ -151,6 +152,9 @@ export function ProjectDetailPage() {
       <div className="relative flex-1 overflow-hidden">
         {view === 'graph' ? (
           <>
+            {/* Starfield ambient — uniquement sur la vue graph (cluster).
+                Monté à l'intérieur du container pour ne pas dépasser. */}
+            <Starfield />
             <GraphCanvas
               ref={graphRef}
               projectId={projectId!}
