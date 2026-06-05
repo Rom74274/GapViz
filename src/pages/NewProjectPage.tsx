@@ -195,7 +195,7 @@ export function NewProjectPage() {
       <section className="rounded-lg border border-border-subtle bg-bg-surface p-5">
         <h2 className="mb-4 text-sm font-semibold">Informations</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="sm:col-span-3">
+          <div className="sm:col-span-3" data-tour-id="tour-name-input">
             <label className="block">
               <span className="mb-1 block text-xs text-text-secondary">Nom du projet</span>
               <input
@@ -207,7 +207,7 @@ export function NewProjectPage() {
               />
             </label>
           </div>
-          <div className="sm:col-span-2">
+          <div className="sm:col-span-2" data-tour-id="tour-domain-input">
             <label className="block">
               <span className="mb-1 block text-xs text-text-secondary">Mon domaine principal</span>
               <input
@@ -237,7 +237,7 @@ export function NewProjectPage() {
         </div>
       </section>
 
-      <section className="mt-6">
+      <section className="mt-6" data-tour-id="tour-my-site">
         <h2 className="mb-3 text-sm font-semibold">Mon site</h2>
         <SiteCard
           site={mySite}
@@ -326,6 +326,7 @@ export function NewProjectPage() {
           type="button"
           onClick={onSubmit}
           disabled={!canSubmit}
+          data-tour-id="tour-submit"
           className="inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-bg-elevated disabled:text-text-muted"
         >
           {submitting ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}

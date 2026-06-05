@@ -1,6 +1,7 @@
 import { Navigate, Outlet } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { OnboardingTour } from '@/components/onboarding/OnboardingTour';
 
 export function AuthGuard() {
   const { status } = useAuth();
@@ -11,7 +12,12 @@ export function AuthGuard() {
   if (status === 'unauthenticated') {
     return <Navigate to="/login" replace />;
   }
-  return <Outlet />;
+  return (
+    <>
+      <Outlet />
+      <OnboardingTour />
+    </>
+  );
 }
 
 function SplashScreen() {
