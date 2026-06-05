@@ -99,6 +99,7 @@ export function SettingsPage() {
         <BYOKSection />
         <ModelSection />
         <ClusterCacheSection />
+        <DevToolsSection />
       </AdvancedSection>
     </div>
   );
@@ -744,4 +745,38 @@ function formatBytes(b: number): string {
   if (b < 1024) return `${b} B`;
   if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
   return `${(b / 1024 / 1024).toFixed(2)} MB`;
+}
+
+// ============================================================================
+// DevToolsSection — outils internes (à supprimer une fois l'onboarding stable).
+// ============================================================================
+
+function DevToolsSection() {
+  const restartOnboarding = () => {
+    try {
+      localStorage.removeItem('stargap-onboarding-completed');
+    } catch {
+      /* ignore */
+    }
+    window.location.hash = '#/';
+    window.location.reload();
+  };
+
+  return (
+    <section className="space-y-3 rounded-lg border border-border-subtle border-dashed bg-bg-surface p-5">
+      <div>
+        <h2 className="text-sm font-semibold">Outils dev</h2>
+        <p className="mt-1 text-xs text-text-muted">
+          Section temporaire — sera supprimée une fois l'onboarding stable.
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={restartOnboarding}
+        className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle bg-bg-elevated px-3 py-1.5 text-xs text-text-secondary hover:border-accent/60 hover:text-accent"
+      >
+        Relancer l'onboarding
+      </button>
+    </section>
+  );
 }
