@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Star Gap logo — 2 étoiles reliées, repris de la landing page -->
+  <rect width="64" height="64" rx="14" fill="#0a0a1a"/>
+  <!-- Connexion entre les deux étoiles -->
+  <line x1="22" y1="22" x2="42" y2="42" stroke="#7c5cfc" stroke-width="1.5" opacity="0.35"/>
+  <!-- Étoile 1 : grande, violet primary -->
+  <circle cx="22" cy="22" r="14" fill="#7c5cfc" opacity="0.18"/>
+  <circle cx="22" cy="22" r="7" fill="#7c5cfc"/>
+  <!-- Étoile 2 : plus petite, violet clair -->
+  <circle cx="44" cy="42" r="11" fill="#a78bfa" opacity="0.15"/>
+  <circle cx="44" cy="42" r="6" fill="#a78bfa"/>
+</svg>

@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "Star Gap Importer",
+  "version": "0.1.0",
+  "description": "Importe tes mots-clés Ahrefs directement dans Star Gap en 1 clic.",
+  "permissions": [
+    "downloads",
+    "storage",
+    "tabs",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "*://app.ahrefs.com/*",
+    "*://kngkvaqovdnysmqrvxtj.functions.supabase.co/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://app.ahrefs.com/*"],
+      "js": ["content-script.js"],
+      "css": ["content-style.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Star Gap Importer",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}

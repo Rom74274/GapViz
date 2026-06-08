@@ -1,0 +1,51 @@
+/* Star Gap — styles injectés sur la page Ahrefs.
+   Préfixe `sg-` partout pour ne pas conflicter avec les classes Ahrefs. */
+
+.sg-banner {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 999999;
+  background: linear-gradient(135deg, #7c5cfc, #a78bfa);
+  color: #fff;
+  padding: 12px 20px;
+  border-radius: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: 0 8px 30px rgba(124, 92, 252, 0.4);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: auto;
+  animation: sgFadeIn 0.3s ease-out;
+}
+
+@keyframes sgFadeIn {
+  from { opacity: 0; transform: translate(-50%, -10px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.sg-banner-close {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.sg-banner-close:hover {
+  color: #fff;
+}
+
+.sg-banner-arrow {
+  font-size: 18px;
+  animation: sgPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes sgPulse {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(4px); }
+}
