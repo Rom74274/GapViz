@@ -18,6 +18,7 @@ import {
 } from '@/lib/plans';
 import type { UserPlan } from '@/lib/supabaseTypes';
 import { UpgradeModal } from '@/components/UpgradeModal';
+import { DomainAutocomplete } from '@/components/onboarding/DomainAutocomplete';
 
 function newSite(isMe: boolean, color: string): SiteEntry {
   return {
@@ -210,14 +211,10 @@ export function NewProjectPage() {
           <div className="sm:col-span-2" data-tour-id="tour-domain-input">
             <label className="block">
               <span className="mb-1 block text-xs text-text-secondary">Mon domaine principal</span>
-              <input
-                type="text"
+              <DomainAutocomplete
                 value={myDomain}
-                onChange={(e) => onMyDomainChange(e.target.value)}
+                onChange={onMyDomainChange}
                 placeholder="exemple.com"
-                className="w-full rounded-md border border-border-subtle bg-bg-base px-3 py-1.5 font-mono text-sm focus:border-accent focus:outline-none"
-                autoComplete="off"
-                spellCheck={false}
               />
             </label>
           </div>

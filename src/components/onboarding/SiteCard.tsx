@@ -1,6 +1,7 @@
 import { Trash2, User, Users } from 'lucide-react';
 import { ColorPicker } from './ColorPicker';
 import { CSVDropzone } from './CSVDropzone';
+import { DomainAutocomplete } from './DomainAutocomplete';
 import { KeywordPreviewTable } from './KeywordPreviewTable';
 import type { ParseResult } from '@/lib/parsers';
 
@@ -54,11 +55,9 @@ export function SiteCard({ site, onChange, onRemove, disabledColors }: SiteCardP
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="Domaine">
-              <input
-                type="text"
+              <DomainAutocomplete
                 value={site.domain}
-                onChange={(e) => {
-                  const domain = e.target.value;
+                onChange={(domain) => {
                   onChange({
                     domain,
                     // auto-fill label si vide ou identique au précédent auto-fill
@@ -69,9 +68,6 @@ export function SiteCard({ site, onChange, onRemove, disabledColors }: SiteCardP
                   });
                 }}
                 placeholder="exemple.fr"
-                className="w-full rounded-md border border-border-subtle bg-bg-base px-3 py-1.5 font-mono text-sm focus:border-accent focus:outline-none"
-                autoComplete="off"
-                spellCheck={false}
               />
             </Field>
             <Field label="Label">
