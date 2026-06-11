@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Sparkles, Loader2, AlertTriangle } from 'lucide-react';
+import { Plus, Sparkles, Loader2, AlertTriangle, Zap, ExternalLink } from 'lucide-react';
 import { SiteCard, type SiteEntry, labelFromDomain } from '@/components/onboarding/SiteCard';
 import { MY_SITE_COLOR, pickNextColor } from '@/lib/colors';
 import {
   createProjectInSupabase,
+  createImportSession,
+  buildAhrefsImportUrl,
   useSupabaseProjects,
   type CreateProjectProgress,
 } from '@/lib/dataLayer';
@@ -48,6 +50,11 @@ export function NewProjectPage() {
   const [submitProgress, setSubmitProgress] = useState<CreateProjectProgress | null>(
     null,
   );
+
+  // État import via extension Chrome.
+  const [importToken, setImportToken] = useState<string | null>(null);
+  const [importStarting, setImportStarting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
   const [upgradeResult, setUpgradeResult] = useState<LimitResult | null>(null);
 
   // Limites par plan : pré-calculées pour bandeaux + hints inline.
@@ -81,6 +88,27 @@ export function NewProjectPage() {
         domain: v,
         label: s.label === '' || s.label === labelFromDomain(s.domain) ? labelFromDomain(v) : s.label,
       }));
+    }
+  };
+
+  const startAhrefsImport = async () => {
+    const domain = myDomain.trim();
+    if (!domain) {
+      setImportError('Renseigne d\'abord ton domaine principal ci-dessus.');
+      return;
+    }
+    setImportError(null);
+    setImportStarting(true);
+    try {
+      const { token } = await createImportSession({ domain, source: 'ahrefs' });
+      setImportToken(token);
+      const url = buildAhrefsImportUrl(domain, token);
+      window.open(url, '_blank');
+    } catch (e) {
+      console.error('[ahrefs-import] error', e);
+      setImportError(e instanceof Error ? e.message : 'Erreur création session import');
+    } finally {
+      setImportStarting(false);
     }
   };
 
@@ -230,6 +258,63 @@ export function NewProjectPage() {
                 className="w-full rounded-md border border-border-subtle bg-bg-base px-3 py-1.5 font-mono text-sm focus:border-accent focus:outline-none"
               />
             </label>
+          </div>
+        </div>
+      </section>
+
+      {/* Import via extension Chrome (Ahrefs) */}
+      <section className="mt-6">
+        <div className="rounded-lg border border-accent/30 bg-accent/[0.04] p-4">
+          <div className="flex items-start gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent">
+              <Zap size={16} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm font-semibold">
+                Importer depuis Ahrefs{' '}
+                <span className="ml-1 rounded-full bg-accent/15 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-accent">
+                  Extension
+                </span>
+              </h3>
+              <p className="mt-1 text-xs text-text-secondary">
+                Au lieu d'exporter manuellement le CSV, ouvre Ahrefs et l'extension Star Gap
+                envoie tes mots-clés directement dans ton projet. Renseigne d'abord ton
+                domaine principal ci-dessus.
+              </p>
+              {importToken && (
+                <div className="mt-3 rounded-md border border-accent/30 bg-bg-surface p-3 text-xs">
+                  <p className="flex items-center gap-2 font-medium text-accent">
+                    <Loader2 size={12} className="animate-spin" />
+                    Onglet Ahrefs ouvert
+                  </p>
+                  <p className="mt-1 text-text-secondary">
+                    Connecte-toi à Ahrefs si besoin, puis clique sur{' '}
+                    <strong className="text-text-primary">Export → CSV</strong> au-dessus
+                    de la table de mots-clés. L'extension envoie automatiquement le résultat
+                    vers Star Gap.
+                  </p>
+                </div>
+              )}
+              {importError && (
+                <p className="mt-2 flex items-center gap-1.5 text-xs text-red-300">
+                  <AlertTriangle size={11} />
+                  {importError}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={startAhrefsImport}
+              disabled={importStarting || !myDomain.trim()}
+              className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-2 text-xs font-medium text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {importStarting ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <ExternalLink size={12} />
+              )}
+              {importToken ? 'Relancer' : 'Ouvrir Ahrefs'}
+            </button>
           </div>
         </div>
       </section>

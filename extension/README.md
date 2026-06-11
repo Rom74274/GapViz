@@ -52,7 +52,7 @@ extension/
 - [x] **Commit 2** — Injection du banner sur la page Ahrefs (instruction "clique Export")
 - [x] **Commit 3** — Interception du download CSV via `chrome.downloads`
 - [x] **Commit 4** — SQL `import_sessions` + Edge Function `extension-import`
-- [ ] **Commit 5** — Bouton "Importer depuis Ahrefs" dans NewProjectPage + génération du token
+- [x] **Commit 5** — Bouton "Importer depuis Ahrefs" dans NewProjectPage + génération du token
 - [ ] **Commit 6** — Polling status + redirect vers le projet créé
 - [ ] **Commit 7** — Polish (erreurs, session expirée, timeout)
 - [ ] **Commit 8** — Publication Chrome Web Store

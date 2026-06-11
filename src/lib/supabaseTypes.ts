@@ -76,6 +76,21 @@ export type SupabaseCluster = {
   excluded: boolean;
 };
 
+export type ImportSessionStatus = 'pending' | 'completed' | 'failed' | 'expired';
+
+export type SupabaseImportSession = {
+  token: string;
+  user_id: string;
+  status: ImportSessionStatus;
+  project_id: string | null;
+  domain: string | null;
+  source: string | null;
+  error_message: string | null;
+  created_at: string;
+  expires_at: string;
+  completed_at: string | null;
+};
+
 // Type "Database" attendu par @supabase/supabase-js v2 :
 //   - Tables doivent avoir Row / Insert / Update / Relationships
 //   - Schema doit aussi déclarer Views / Functions (vide ici)
@@ -122,6 +137,22 @@ export type Database = {
         Row: SupabaseCluster;
         Insert: Omit<SupabaseCluster, 'id'> & { id?: string };
         Update: Partial<SupabaseCluster>;
+        Relationships: [];
+      };
+      import_sessions: {
+        Row: SupabaseImportSession;
+        // token, user_id obligatoires ; tout le reste a des defaults DB.
+        Insert: {
+          token?: string;
+          user_id: string;
+          status?: ImportSessionStatus;
+          project_id?: string | null;
+          domain?: string | null;
+          source?: string | null;
+          error_message?: string | null;
+          expires_at?: string;
+        };
+        Update: Partial<SupabaseImportSession>;
         Relationships: [];
       };
     };

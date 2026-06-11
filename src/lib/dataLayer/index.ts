@@ -41,3 +41,12 @@ export {
   type ManagedClusterResult,
   type ManagedClusterError,
 } from './managedClustering';
+
+export {
+  createImportSession,
+  getImportSession,
+  cancelImportSession,
+  buildAhrefsImportUrl,
+  type CreateImportSessionInput,
+  type CreateImportSessionResult,
+} from './extensionImport';
