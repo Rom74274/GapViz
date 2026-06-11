@@ -62,58 +62,78 @@ export function NewProjectPage() {
   const pollAbortRef = useRef<boolean>(false);
   const [upgradeResult, setUpgradeResult] = useState<LimitResult | null>(null);
 
-  // Polling du status de la session import (toutes les 2s, max 10 min).
-  // Quand status passe à 'completed' → redirect vers le projet créé.
+  // Polling du status de la session import + check au retour de focus
+  // (Chrome throttle les onglets en background → on rattrape dès que l'user
+  // revient sur la page Star Gap).
   useEffect(() => {
     if (!importToken) return;
     pollAbortRef.current = false;
     setImportStatus('waiting');
     const startedAt = Date.now();
-    const MAX_DURATION = 10 * 60 * 1000; // 10 min
+    const MAX_DURATION = 10 * 60 * 1000;
+    let done = false;
 
-    const tick = async () => {
-      if (pollAbortRef.current) return;
+    const checkOnce = async (): Promise<boolean> => {
+      if (done || pollAbortRef.current) return true;
       if (Date.now() - startedAt > MAX_DURATION) {
+        done = true;
         setImportStatus('expired');
-        setImportError('Délai dépassé. Réessaie en relançant l\'import.');
-        return;
+        setImportError("Délai dépassé. Relance l'import.");
+        return true;
       }
       try {
         const session = await getImportSession(importToken);
-        if (pollAbortRef.current) return;
-        if (!session) {
-          setTimeout(tick, 2000);
-          return;
-        }
+        if (done || pollAbortRef.current) return true;
+        if (!session) return false;
+        console.log('[import-poll] status', session.status, session.project_id);
         if (session.status === 'completed' && session.project_id) {
+          done = true;
           setImportStatus('completed');
-          // Petit délai avant redirect pour que l'user voie le succès.
-          setTimeout(() => {
-            navigate(`/projects/${session.project_id}`);
-          }, 1200);
-          return;
+          setTimeout(() => navigate(`/projects/${session.project_id}`), 1200);
+          return true;
         }
         if (session.status === 'failed') {
+          done = true;
           setImportStatus('failed');
-          setImportError(session.error_message || 'Échec de l\'import');
-          return;
+          setImportError(session.error_message || "Échec de l'import");
+          return true;
         }
         if (session.status === 'expired') {
+          done = true;
           setImportStatus('expired');
-          setImportError('Session expirée. Relance l\'import.');
-          return;
+          setImportError("Session expirée. Relance l'import.");
+          return true;
         }
-        // Encore 'pending' → on continue à poller
-        setTimeout(tick, 2000);
+        return false; // toujours pending
       } catch (e) {
         console.error('[import-poll] error', e);
-        setTimeout(tick, 3000);
+        return false;
       }
     };
-    tick();
+
+    // 1) Polling régulier (2s). Chrome throttle en background tab mais
+    // au moins ça déclenche quand on revient.
+    const intervalId = window.setInterval(async () => {
+      const finished = await checkOnce();
+      if (finished) window.clearInterval(intervalId);
+    }, 2000);
+
+    // 2) Check immédiat à chaque retour de focus / visibilité du tab.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') checkOnce();
+    };
+    const onFocus = () => checkOnce();
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onFocus);
+
+    // Check initial.
+    checkOnce();
 
     return () => {
       pollAbortRef.current = true;
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onFocus);
     };
   }, [importToken, navigate]);
 
