@@ -257,25 +257,36 @@ function parseAhrefsCsv(text: string): ParsedRow[] {
   // Strip BOM résiduel.
   if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
 
-  const lines = text.split(/\r?\n/).filter((l) => l.length > 0);
-  if (lines.length < 2) throw new Error('CSV trop court (manque headers ou données)');
+  // Détecte séparateur sur la 1ère ligne, AVANT de tokenize les guillemets.
+  // (suffit, Ahrefs ne mélange pas tab et virgule sur la même ligne).
+  const firstNl = text.search(/\r?\n/);
+  const firstLine = firstNl > 0 ? text.slice(0, firstNl) : text;
+  const sep = firstLine.includes('\t') ? '\t' : ',';
 
-  // Détecte séparateur : tab si présent dans la 1ère ligne, sinon virgule.
-  const sep = lines[0]!.includes('\t') ? '\t' : ',';
-  const headers = splitRow(lines[0]!, sep).map((h) => h.toLowerCase().trim());
+  const allRows = parseCsvText(text, sep);
+  if (allRows.length < 2) throw new Error('CSV trop court (manque headers ou données)');
+
+  const headers = allRows[0]!.map((h) => h.toLowerCase().trim());
 
   const colIndex = (...candidates: string[]): number => {
+    // Match exact d'abord, puis fuzzy (includes) en fallback.
     for (const c of candidates) {
-      const idx = headers.findIndex((h) => h.includes(c.toLowerCase()));
-      if (idx >= 0) return idx;
+      const lc = c.toLowerCase();
+      const exact = headers.findIndex((h) => h === lc);
+      if (exact >= 0) return exact;
+    }
+    for (const c of candidates) {
+      const lc = c.toLowerCase();
+      const fuzzy = headers.findIndex((h) => h.includes(lc));
+      if (fuzzy >= 0) return fuzzy;
     }
     return -1;
   };
 
   const iKeyword = colIndex('keyword');
-  const iVolume = colIndex('search volume', 'volume');
+  const iVolume = colIndex('volume', 'search volume');
   const iPosition = colIndex('current position', 'position');
-  const iKd = colIndex('keyword difficulty', 'difficulty', 'kd');
+  const iKd = colIndex('kd', 'keyword difficulty', 'difficulty');
   const iCpc = colIndex('cpc');
   const iUrl = colIndex('current url', 'url');
 
@@ -284,16 +295,25 @@ function parseAhrefsCsv(text: string): ParsedRow[] {
   }
 
   const rows: ParsedRow[] = [];
-  for (let i = 1; i < lines.length; i++) {
-    const cells = splitRow(lines[i]!, sep);
+  for (let i = 1; i < allRows.length; i++) {
+    const cells = allRows[i]!;
     const keyword = (cells[iKeyword] || '').trim();
     if (!keyword) continue;
+
+    // Clamping défensif : position ∈ [1, 1000], kd ∈ [0, 100].
+    // Si une valeur dépasse, c'est qu'on a un mauvais mapping → on null
+    // pour éviter de polluer la DB.
+    const rawPos = iPosition >= 0 ? parseNum(cells[iPosition]) : null;
+    const position = rawPos !== null && (rawPos < 1 || rawPos > 1000) ? null : rawPos;
+
+    const rawKd = iKd >= 0 ? parseNum(cells[iKd]) : null;
+    const kd = rawKd !== null && (rawKd < 0 || rawKd > 100) ? null : rawKd;
 
     rows.push({
       keyword,
       volume: iVolume >= 0 ? parseNum(cells[iVolume]) : null,
-      position: iPosition >= 0 ? parseNum(cells[iPosition]) : null,
-      kd: iKd >= 0 ? parseNum(cells[iKd]) : null,
+      position,
+      kd,
       cpc: iCpc >= 0 ? parseNum(cells[iCpc]) : null,
       url: iUrl >= 0 ? (cells[iUrl] || '').trim() || null : null,
     });
@@ -301,10 +321,68 @@ function parseAhrefsCsv(text: string): ParsedRow[] {
   return rows;
 }
 
-function splitRow(line: string, sep: string): string[] {
-  // Gestion naïve : on split sur le séparateur, on strip les guillemets
-  // englobants. Suffit pour Ahrefs (tab) qui ne quote pas habituellement.
-  return line.split(sep).map((c) => c.trim().replace(/^"|"$/g, ''));
+// Vrai parser CSV qui respecte les guillemets (RFC 4180-like).
+// Gère :
+//   - Champs entre guillemets `"..."` qui peuvent contenir le séparateur
+//   - Guillemets échappés `""` → `"`
+//   - CRLF / LF / CR comme line ending
+//   - Champs multilignes (un `"..."` peut contenir des newlines)
+function parseCsvText(text: string, sep: string): string[][] {
+  const rows: string[][] = [];
+  let current = '';
+  let row: string[] = [];
+  let inQuotes = false;
+  let i = 0;
+  const N = text.length;
+
+  while (i < N) {
+    const ch = text[i]!;
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          current += '"';
+          i += 2;
+          continue;
+        }
+        inQuotes = false;
+        i++;
+        continue;
+      }
+      current += ch;
+      i++;
+      continue;
+    }
+    // Hors quotes :
+    if (ch === '"') {
+      inQuotes = true;
+      i++;
+      continue;
+    }
+    if (ch === sep) {
+      row.push(current);
+      current = '';
+      i++;
+      continue;
+    }
+    if (ch === '\r' || ch === '\n') {
+      row.push(current);
+      current = '';
+      if (row.length > 1 || row[0] !== '') rows.push(row);
+      row = [];
+      // Skip CRLF en 1 fois
+      if (ch === '\r' && text[i + 1] === '\n') i += 2;
+      else i++;
+      continue;
+    }
+    current += ch;
+    i++;
+  }
+  // Push dernière cellule + ligne si non terminée par newline.
+  if (current.length > 0 || row.length > 0) {
+    row.push(current);
+    if (row.length > 1 || row[0] !== '') rows.push(row);
+  }
+  return rows;
 }
 
 function parseNum(s: string | undefined): number | null {
