@@ -1,51 +1,126 @@
 /* Star Gap — styles injectés sur la page Ahrefs.
-   Préfixe `sg-` partout pour ne pas conflicter avec les classes Ahrefs. */
+   Préfixe `sg-` partout pour ne pas conflicter avec les classes Ahrefs.
+   Tout `all: initial` + redéfinition pour isoler du CSS Ahrefs. */
+
+#sg-banner-root {
+  all: initial;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
 
 .sg-banner {
   position: fixed;
-  top: 16px;
+  top: 20px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 999999;
-  background: linear-gradient(135deg, #7c5cfc, #a78bfa);
+  z-index: 2147483647; /* max int, on est au-dessus de tout */
+  background: linear-gradient(135deg, #7c5cfc 0%, #a78bfa 100%);
   color: #fff;
-  padding: 12px 20px;
-  border-radius: 12px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  font-size: 14px;
-  font-weight: 500;
-  box-shadow: 0 8px 30px rgba(124, 92, 252, 0.4);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  pointer-events: auto;
-  animation: sgFadeIn 0.3s ease-out;
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(124, 92, 252, 0.45), 0 2px 8px rgba(0, 0, 0, 0.2);
+  animation: sgFadeIn 0.4s cubic-bezier(0.22, 0.68, 0, 1) both;
+  max-width: 560px;
 }
 
-@keyframes sgFadeIn {
-  from { opacity: 0; transform: translate(-50%, -10px); }
-  to { opacity: 1; transform: translate(-50%, 0); }
+.sg-banner-closing {
+  animation: sgFadeOut 0.25s ease-in both;
+}
+
+.sg-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 20px 14px 16px;
+}
+
+.sg-banner-logo {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+}
+
+.sg-banner-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.sg-banner-title {
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  margin-bottom: 2px;
+}
+
+.sg-banner-message {
+  font-size: 13px;
+  font-weight: 400;
+  opacity: 0.95;
+}
+
+.sg-banner-message strong {
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.22);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.sg-banner-arrow {
+  flex-shrink: 0;
+  font-size: 20px;
+  font-weight: bold;
+  color: #fff;
+  animation: sgPulse 1.4s ease-in-out infinite;
 }
 
 .sg-banner-close {
-  background: transparent;
-  border: none;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 18px;
+  all: unset;
   cursor: pointer;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 20px;
+  line-height: 1;
   padding: 0 4px;
+  transition: color 0.15s;
 }
 
 .sg-banner-close:hover {
   color: #fff;
 }
 
-.sg-banner-arrow {
-  font-size: 18px;
-  animation: sgPulse 1.5s ease-in-out infinite;
+@keyframes sgFadeIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -16px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@keyframes sgFadeOut {
+  from {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -16px);
+  }
 }
 
 @keyframes sgPulse {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(4px); }
+  0%, 100% {
+    transform: translateY(0);
+    opacity: 0.7;
+  }
+  50% {
+    transform: translateY(6px);
+    opacity: 1;
+  }
 }
