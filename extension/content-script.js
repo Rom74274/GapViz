@@ -25,7 +25,6 @@
 
     const banner = document.createElement('div');
     banner.id = BANNER_ID;
-    banner.className = 'sg-banner';
     banner.innerHTML = `
       <div class="sg-banner-content">
         <div class="sg-banner-logo">
@@ -49,10 +48,13 @@
     `;
     document.body.appendChild(banner);
 
-    banner.querySelector('.sg-banner-close')?.addEventListener('click', () => {
-      banner.classList.add('sg-banner-closing');
-      setTimeout(() => banner.remove(), 250);
-    });
+    const closeBtn = banner.querySelector('.sg-banner-close');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => {
+        banner.classList.add('sg-banner-closing');
+        setTimeout(() => banner.remove(), 250);
+      });
+    }
 
     console.log('[Star Gap] Banner injecté');
   }
