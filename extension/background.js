@@ -1,37 +1,26 @@
 // Star Gap background service worker.
-// Étape 3 : interception des téléchargements CSV venant d'Ahrefs.
-// Workflow :
-//   1. User clique Export sur Ahrefs → CSV se télécharge
-//   2. chrome.downloads.onCreated trigger → on filtre les downloads
-//      ahrefs.com avec extension .csv
-//   3. On stocke l'ID + URL du download
-//   4. chrome.downloads.onChanged trigger → quand le download passe en
-//      state="complete", on lit le fichier via fetch (l'URL pointe vers
-//      le fichier local — file://, mais Chrome refuse fetch file://...)
-//   5. Plan B : on intercepte la requête réseau d'Ahrefs vers leur API
-//      d'export AVANT que le navigateur télécharge. Plus complexe mais
-//      seul moyen fiable de récupérer le contenu sans permission
-//      file system.
-//
-// V1 minimal : on log juste les metadata du download (URL source,
-// filename, state) pour vérifier qu'on intercepte bien. La lecture
-// du contenu CSV viendra avec une approche fetch sur l'URL d'origine.
+// Étape 6 : capture le CSV téléchargé depuis Ahrefs, refetch l'URL avec
+// les cookies de l'user pour récupérer le contenu, POST à l'Edge Function
+// extension-import avec le token stocké.
+
+const EXTENSION_IMPORT_URL =
+  'https://kngkvaqovdnysmqrvxtj.functions.supabase.co/extension-import';
 
 const AHREFS_DOMAIN = 'ahrefs.com';
 
-// Map downloadId → metadata.
+// Map downloadId → metadata (pour relier onChanged à onCreated).
 const trackedDownloads = new Map();
 
 chrome.downloads.onCreated.addListener((downloadItem) => {
   const url = downloadItem.url || '';
   const finalUrl = downloadItem.finalUrl || url;
   const filename = downloadItem.filename || '';
+  const referrer = downloadItem.referrer || '';
 
-  // Filtre : on veut uniquement les downloads venant d'Ahrefs avec un CSV.
   const isFromAhrefs =
     url.includes(AHREFS_DOMAIN) ||
     finalUrl.includes(AHREFS_DOMAIN) ||
-    (downloadItem.referrer || '').includes(AHREFS_DOMAIN);
+    referrer.includes(AHREFS_DOMAIN);
 
   const looksLikeCsv =
     /\.csv($|\?)/i.test(url) ||
@@ -43,55 +32,124 @@ chrome.downloads.onCreated.addListener((downloadItem) => {
 
   console.log('[Star Gap] Download Ahrefs CSV détecté', {
     id: downloadItem.id,
-    url: url.slice(0, 100),
-    finalUrl: finalUrl.slice(0, 100),
-    referrer: downloadItem.referrer,
+    finalUrl: finalUrl.slice(0, 120),
     filename,
-    mime: downloadItem.mime,
-    state: downloadItem.state,
   });
 
   trackedDownloads.set(downloadItem.id, {
     sourceUrl: url,
     finalUrl,
     filename,
-    referrer: downloadItem.referrer,
+    referrer,
     startedAt: Date.now(),
   });
 });
 
-chrome.downloads.onChanged.addListener((delta) => {
+chrome.downloads.onChanged.addListener(async (delta) => {
   if (!trackedDownloads.has(delta.id)) return;
+  if (!delta.state) return;
 
-  // Suivi de l'état (in_progress → complete OU interrupted).
-  if (delta.state) {
-    const meta = trackedDownloads.get(delta.id);
-    console.log(`[Star Gap] Download ${delta.id} → ${delta.state.current}`, {
-      ...meta,
-      newState: delta.state.current,
-    });
+  const newState = delta.state.current;
+  const meta = trackedDownloads.get(delta.id);
 
-    if (delta.state.current === 'complete') {
-      // Récupère le filename final (parfois set après onCreated).
-      chrome.downloads.search({ id: delta.id }, (results) => {
-        if (results && results[0]) {
-          const fullPath = results[0].filename;
-          console.log('[Star Gap] CSV téléchargé :', fullPath);
-          console.log('[Star Gap] → prochaine étape (commit 4) : envoi vers Star Gap');
-          // TODO commit 4 : lire le contenu du CSV et l'envoyer à
-          // l'Edge Function extension-import.
-        }
-      });
-      trackedDownloads.delete(delta.id);
-    } else if (delta.state.current === 'interrupted') {
-      console.warn('[Star Gap] Download interrompu', delta.id);
-      trackedDownloads.delete(delta.id);
-    }
+  if (newState === 'complete') {
+    console.log('[Star Gap] Download complete, refetch + POST', meta);
+    await handleCompletedDownload(meta);
+    trackedDownloads.delete(delta.id);
+  } else if (newState === 'interrupted') {
+    console.warn('[Star Gap] Download interrompu', delta.id);
+    trackedDownloads.delete(delta.id);
   }
 });
 
-// Listener message du content script (toujours utile pour commit 5+).
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+async function handleCompletedDownload(meta) {
+  // 1) Lit le token actif depuis storage.
+  const { activeImportToken } = await chrome.storage.local.get('activeImportToken');
+  if (!activeImportToken) {
+    console.log('[Star Gap] Pas de token actif, on ignore ce download');
+    return;
+  }
+
+  // Vérifie que le token n'est pas trop vieux (10 min côté serveur).
+  const age = Date.now() - (activeImportToken.startedAt || 0);
+  if (age > 10 * 60 * 1000) {
+    console.warn('[Star Gap] Token expiré (>10 min), on ignore');
+    await chrome.storage.local.remove('activeImportToken');
+    return;
+  }
+
+  // Notifie le content script que l'upload commence.
+  await sendStatusToActiveTab('uploading');
+
+  try {
+    // 2) Refetch l'URL d'origine avec les cookies Ahrefs (host_permissions
+    // permet d'envoyer les cookies de session automatiquement).
+    const refetchUrl = meta.finalUrl || meta.sourceUrl;
+    if (!refetchUrl) throw new Error('URL de download introuvable');
+
+    const csvRes = await fetch(refetchUrl, {
+      method: 'GET',
+      credentials: 'include',
+    });
+
+    if (!csvRes.ok) {
+      throw new Error(`Refetch Ahrefs : HTTP ${csvRes.status} (URL one-shot ?)`);
+    }
+
+    const csvBlob = await csvRes.blob();
+    if (csvBlob.size === 0) throw new Error('CSV vide reçu d\'Ahrefs');
+
+    console.log(`[Star Gap] CSV récupéré : ${csvBlob.size} bytes`);
+
+    // 3) POST à l'Edge Function avec FormData.
+    const form = new FormData();
+    form.append('token', activeImportToken.token);
+    form.append('domain', activeImportToken.domain || '');
+    form.append('source', 'ahrefs');
+    form.append('csv', csvBlob, meta.filename || 'ahrefs-export.csv');
+
+    const importRes = await fetch(EXTENSION_IMPORT_URL, {
+      method: 'POST',
+      body: form,
+    });
+
+    const result = await importRes.json().catch(() => ({}));
+    if (!importRes.ok || !result.ok) {
+      throw new Error(result.message || result.error || `HTTP ${importRes.status}`);
+    }
+
+    console.log('[Star Gap] Import OK', result);
+    await sendStatusToActiveTab('success', { project_id: result.project_id });
+    await chrome.storage.local.remove('activeImportToken');
+  } catch (e) {
+    console.error('[Star Gap] Échec import', e);
+    const msg = e instanceof Error ? e.message : String(e);
+    await sendStatusToActiveTab('failed', { error: msg });
+    // On ne clear pas le token : permet à l'user de retry en cliquant
+    // Export à nouveau. Il expirera côté serveur après 10 min.
+  }
+}
+
+async function sendStatusToActiveTab(status, extra = {}) {
+  try {
+    const [tab] = await chrome.tabs.query({
+      active: true,
+      url: '*://app.ahrefs.com/*',
+    });
+    if (tab?.id) {
+      chrome.tabs.sendMessage(tab.id, {
+        type: 'sg_import_status',
+        status,
+        ...extra,
+      });
+    }
+  } catch (e) {
+    // Le content script peut ne plus être chargé, pas grave.
+    console.warn('[Star Gap] sendStatusToActiveTab fail', e);
+  }
+}
+
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === 'ping') {
     sendResponse({ ok: true, version: chrome.runtime.getManifest().version });
     return false;
@@ -99,4 +157,4 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return false;
 });
 
-console.log('[Star Gap] Background service worker prêt — écoute des downloads Ahrefs CSV');
+console.log('[Star Gap] Background service worker prêt');
