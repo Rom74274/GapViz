@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Sparkles, Loader2, AlertTriangle, Zap, ExternalLink } from 'lucide-react';
 import { SiteCard, type SiteEntry, labelFromDomain } from '@/components/onboarding/SiteCard';
@@ -6,6 +6,7 @@ import { MY_SITE_COLOR, pickNextColor } from '@/lib/colors';
 import {
   createProjectInSupabase,
   createImportSession,
+  getImportSession,
   buildAhrefsImportUrl,
   useSupabaseProjects,
   type CreateProjectProgress,
@@ -55,7 +56,66 @@ export function NewProjectPage() {
   const [importToken, setImportToken] = useState<string | null>(null);
   const [importStarting, setImportStarting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  const [importStatus, setImportStatus] = useState<
+    'idle' | 'waiting' | 'completed' | 'failed' | 'expired'
+  >('idle');
+  const pollAbortRef = useRef<boolean>(false);
   const [upgradeResult, setUpgradeResult] = useState<LimitResult | null>(null);
+
+  // Polling du status de la session import (toutes les 2s, max 10 min).
+  // Quand status passe à 'completed' → redirect vers le projet créé.
+  useEffect(() => {
+    if (!importToken) return;
+    pollAbortRef.current = false;
+    setImportStatus('waiting');
+    const startedAt = Date.now();
+    const MAX_DURATION = 10 * 60 * 1000; // 10 min
+
+    const tick = async () => {
+      if (pollAbortRef.current) return;
+      if (Date.now() - startedAt > MAX_DURATION) {
+        setImportStatus('expired');
+        setImportError('Délai dépassé. Réessaie en relançant l\'import.');
+        return;
+      }
+      try {
+        const session = await getImportSession(importToken);
+        if (pollAbortRef.current) return;
+        if (!session) {
+          setTimeout(tick, 2000);
+          return;
+        }
+        if (session.status === 'completed' && session.project_id) {
+          setImportStatus('completed');
+          // Petit délai avant redirect pour que l'user voie le succès.
+          setTimeout(() => {
+            navigate(`/projects/${session.project_id}`);
+          }, 1200);
+          return;
+        }
+        if (session.status === 'failed') {
+          setImportStatus('failed');
+          setImportError(session.error_message || 'Échec de l\'import');
+          return;
+        }
+        if (session.status === 'expired') {
+          setImportStatus('expired');
+          setImportError('Session expirée. Relance l\'import.');
+          return;
+        }
+        // Encore 'pending' → on continue à poller
+        setTimeout(tick, 2000);
+      } catch (e) {
+        console.error('[import-poll] error', e);
+        setTimeout(tick, 3000);
+      }
+    };
+    tick();
+
+    return () => {
+      pollAbortRef.current = true;
+    };
+  }, [importToken, navigate]);
 
   // Limites par plan : pré-calculées pour bandeaux + hints inline.
   const projectLimitCheck = useMemo(
@@ -281,21 +341,37 @@ export function NewProjectPage() {
                 envoie tes mots-clés directement dans ton projet. Renseigne d'abord ton
                 domaine principal ci-dessus.
               </p>
-              {importToken && (
+              {importToken && importStatus === 'waiting' && (
                 <div className="mt-3 rounded-md border border-accent/30 bg-bg-surface p-3 text-xs">
                   <p className="flex items-center gap-2 font-medium text-accent">
                     <Loader2 size={12} className="animate-spin" />
-                    Onglet Ahrefs ouvert
+                    En attente du clic Export sur Ahrefs…
                   </p>
                   <p className="mt-1 text-text-secondary">
                     Connecte-toi à Ahrefs si besoin, puis clique sur{' '}
                     <strong className="text-text-primary">Export → CSV</strong> au-dessus
-                    de la table de mots-clés. L'extension envoie automatiquement le résultat
-                    vers Star Gap.
+                    de la table. L'extension détecte le téléchargement et envoie tes
+                    mots-clés vers Star Gap.
                   </p>
                 </div>
               )}
-              {importError && (
+              {importStatus === 'completed' && (
+                <div className="mt-3 rounded-md border border-green-400/40 bg-green-400/5 p-3 text-xs">
+                  <p className="flex items-center gap-2 font-medium text-green-300">
+                    <Sparkles size={12} />
+                    Import réussi ! Redirection vers ton projet…
+                  </p>
+                </div>
+              )}
+              {(importStatus === 'failed' || importStatus === 'expired') && importError && (
+                <div className="mt-3 rounded-md border border-red-400/40 bg-red-400/5 p-3 text-xs">
+                  <p className="flex items-center gap-2 font-medium text-red-300">
+                    <AlertTriangle size={12} />
+                    {importError}
+                  </p>
+                </div>
+              )}
+              {importError && importStatus === 'idle' && (
                 <p className="mt-2 flex items-center gap-1.5 text-xs text-red-300">
                   <AlertTriangle size={11} />
                   {importError}
