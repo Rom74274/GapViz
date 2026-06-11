@@ -50,7 +50,7 @@ extension/
 
 - [x] **Commit 1** — Setup : manifest, structure, popup, icons, content script qui détecte la page Organic Keywords
 - [x] **Commit 2** — Injection du banner sur la page Ahrefs (instruction "clique Export")
-- [ ] **Commit 3** — Interception du download CSV via `chrome.downloads`
+- [x] **Commit 3** — Interception du download CSV via `chrome.downloads`
 - [ ] **Commit 4** — SQL `import_sessions` + Edge Function `extension-import`
 - [ ] **Commit 5** — Bouton "Importer depuis Ahrefs" dans NewProjectPage + génération du token
 - [ ] **Commit 6** — Polling status + redirect vers le projet créé
