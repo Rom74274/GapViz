@@ -16,8 +16,11 @@ import {
   RotateCw,
   Award,
   Crosshair,
+  Settings2,
 } from 'lucide-react';
 import { db, type Intent } from '@/lib/db';
+import { supabase } from '@/lib/supabase';
+import { ColorPicker } from '@/components/onboarding/ColorPicker';
 import {
   DEFAULT_FILTERS,
   isAnyFilterActive,
@@ -354,11 +357,12 @@ function ConcurrentFilter({
   onChange,
 }: {
   allDomains: string[];
-  competitors: { domain: string; label: string; color: string; isMe: boolean }[];
+  competitors: { id: string; domain: string; label: string; color: string; isMe: boolean }[];
   value: string[] | null;
   onChange: (v: string[] | null) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const sorted = [...competitors].sort((a, b) =>
     a.isMe === b.isMe ? a.label.localeCompare(b.label) : a.isMe ? -1 : 1,
   );
@@ -373,10 +377,19 @@ function ConcurrentFilter({
     else onChange(next);
   };
 
+  const updateColor = async (id: string, color: string) => {
+    await db.competitors.update(id, { color });
+    const { error } = await supabase.from('competitors').update({ color }).eq('id', id);
+    if (error) console.warn('[competitors] color update', error);
+  };
+
   return (
     <Popover
       open={open}
-      onOpenChange={setOpen}
+      onOpenChange={(v) => {
+        setOpen(v);
+        if (!v) setEditingId(null);
+      }}
       trigger={
         <FilterButton
           active={active}
@@ -407,36 +420,71 @@ function ConcurrentFilter({
       <ul className="space-y-1">
         {sorted.map((c) => {
           const isOn = (value ?? allDomains).includes(c.domain);
+          const isEditing = editingId === c.id;
+          const usedColors = competitors
+            .filter((other) => other.id !== c.id)
+            .map((other) => other.color);
           return (
             <li key={c.domain}>
-              <button
-                type="button"
-                onClick={() => toggle(c.domain)}
-                className="flex w-full items-center gap-2 rounded px-2 py-1 text-left hover:bg-bg-elevated"
-              >
-                <span
-                  className={cn(
-                    'flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border',
-                    isOn ? 'border-accent bg-accent/20' : 'border-border-strong',
-                  )}
+              <div className="group flex items-center gap-2 rounded px-2 py-1 hover:bg-bg-elevated">
+                <button
+                  type="button"
+                  onClick={() => toggle(c.domain)}
+                  className="flex flex-1 items-center gap-2 text-left"
                 >
-                  {isOn && <span className="h-2 w-2 rounded-sm bg-accent" />}
-                </span>
-                <span
-                  className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: c.color }}
-                />
-                <span
-                  className={cn('flex-1 truncate text-xs', c.isMe && 'font-semibold')}
-                >
-                  {c.label}
-                </span>
-                {c.isMe && (
-                  <span className="rounded bg-bg-elevated px-1.5 py-0.5 text-[9px] text-text-muted">
-                    moi
+                  <span
+                    className={cn(
+                      'flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border',
+                      isOn ? 'border-accent bg-accent/20' : 'border-border-strong',
+                    )}
+                  >
+                    {isOn && <span className="h-2 w-2 rounded-sm bg-accent" />}
                   </span>
-                )}
-              </button>
+                  <span
+                    className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: c.color }}
+                  />
+                  <span
+                    className={cn('flex-1 truncate text-xs', c.isMe && 'font-semibold')}
+                  >
+                    {c.label}
+                  </span>
+                  {c.isMe && (
+                    <span className="rounded bg-bg-elevated px-1.5 py-0.5 text-[9px] text-text-muted">
+                      moi
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditingId(isEditing ? null : c.id);
+                  }}
+                  className={cn(
+                    'rounded p-1 text-text-muted transition-opacity hover:bg-bg-surface hover:text-text-primary',
+                    isEditing
+                      ? 'opacity-100 text-accent'
+                      : 'opacity-0 group-hover:opacity-100',
+                  )}
+                  aria-label="Modifier la couleur"
+                  title="Modifier la couleur"
+                >
+                  <Settings2 size={12} />
+                </button>
+              </div>
+              {isEditing && (
+                <div className="ml-7 mt-1 mb-2 rounded border border-border-subtle bg-bg-base p-2">
+                  <ColorPicker
+                    value={c.color}
+                    onChange={(color) => {
+                      void updateColor(c.id, color);
+                      setEditingId(null);
+                    }}
+                    disabled={usedColors}
+                  />
+                </div>
+              )}
             </li>
           );
         })}
