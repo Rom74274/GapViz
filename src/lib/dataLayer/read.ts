@@ -73,22 +73,25 @@ export async function fetchProjectDetailFromSupabase(
   const keywords = (keywordsQ.data ?? []) as SupabaseKeyword[];
   const clusters = (clustersQ.data ?? []) as SupabaseCluster[];
 
-  // 3) Positions — uniquement si on a des keywords (sinon on évite une
-  // requête inutile et un IN () vide).
+  // 3) Positions — chunked par batches de 200 keyword_ids pour rester
+  // sous la limite d'URL PostgREST (~8KB). Avec des UUIDs de 36 chars,
+  // 200 IDs = ~7200 chars, OK.
   let positions: SupabaseKeywordPosition[] = [];
   if (keywords.length > 0) {
-    const positionsQ = await supabase
-      .from('keyword_positions')
-      .select('*')
-      .in(
-        'keyword_id',
-        keywords.map((k) => k.id),
-      );
-    if (positionsQ.error) {
-      console.error('[dataLayer] fetchProjectDetail positions error', positionsQ.error);
-      return { ok: false, reason: 'error', error: positionsQ.error };
+    const allKwIds = keywords.map((k) => k.id);
+    const CHUNK = 200;
+    for (let i = 0; i < allKwIds.length; i += CHUNK) {
+      const chunk = allKwIds.slice(i, i + CHUNK);
+      const positionsQ = await supabase
+        .from('keyword_positions')
+        .select('*')
+        .in('keyword_id', chunk);
+      if (positionsQ.error) {
+        console.error('[dataLayer] fetchProjectDetail positions error', positionsQ.error);
+        return { ok: false, reason: 'error', error: positionsQ.error };
+      }
+      positions = positions.concat((positionsQ.data ?? []) as SupabaseKeywordPosition[]);
     }
-    positions = (positionsQ.data ?? []) as SupabaseKeywordPosition[];
   }
 
   return {
