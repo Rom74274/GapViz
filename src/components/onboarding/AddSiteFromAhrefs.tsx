@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { ExternalLink, Loader2, Sparkles, X, Zap, AlertTriangle } from 'lucide-react';
 import {
   createImportSession,
@@ -7,6 +8,10 @@ import {
   fetchProjectDetailFromSupabase,
   syncProjectToDexie,
 } from '@/lib/dataLayer';
+import { db } from '@/lib/db';
+import { supabase } from '@/lib/supabase';
+import { pickNextColor, PALETTE } from '@/lib/colors';
+import { ColorPicker } from '@/components/onboarding/ColorPicker';
 import { DomainAutocomplete } from '@/components/onboarding/DomainAutocomplete';
 import { cn } from '@/lib/utils';
 
@@ -36,7 +41,22 @@ export function AddSiteFromAhrefs({ projectId, open, onClose, onImportComplete }
   const [status, setStatus] = useState<Status>('idle');
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const [color, setColor] = useState<string>(PALETTE[0]!);
   const pollAbortRef = useRef(false);
+
+  const existingCompetitors = useLiveQuery(
+    () => db.competitors.where('projectId').equals(projectId).toArray(),
+    [projectId],
+  );
+  const usedColors = useMemo(
+    () => (existingCompetitors ?? []).map((c) => c.color),
+    [existingCompetitors],
+  );
+
+  // Pré-sélection : première couleur libre dans la palette.
+  useEffect(() => {
+    if (open) setColor(pickNextColor(usedColors));
+  }, [open, usedColors]);
 
   // Reset au open/close.
   useEffect(() => {
@@ -74,6 +94,17 @@ export function AddSiteFromAhrefs({ projectId, open, onClose, onImportComplete }
         if (session.status === 'completed') {
           done = true;
           setStatus('completed');
+          // Applique la couleur choisie par l'user (l'edge function en a posé
+          // une par défaut au insert — on l'écrase ici avant le sync Dexie).
+          const targetDomain = (session.domain ?? domain).trim().toLowerCase();
+          if (targetDomain) {
+            const { error: updErr } = await supabase
+              .from('competitors')
+              .update({ color })
+              .eq('project_id', projectId)
+              .eq('domain', targetDomain);
+            if (updErr) console.warn('[add-site] competitor color update', updErr);
+          }
           // Re-fetch + sync Dexie pour que la page projet voie le nouveau site.
           const detail = await fetchProjectDetailFromSupabase(projectId);
           if (detail.ok) await syncProjectToDexie(detail.data);
@@ -122,7 +153,7 @@ export function AddSiteFromAhrefs({ projectId, open, onClose, onImportComplete }
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', checkOnce);
     };
-  }, [token, projectId, onClose, onImportComplete]);
+  }, [token, projectId, color, onClose, onImportComplete]);
 
   const start = async () => {
     const cleanDomain = domain.trim().toLowerCase();
@@ -195,6 +226,16 @@ export function AddSiteFromAhrefs({ projectId, open, onClose, onImportComplete }
                 placeholder="exemple.com"
               />
             </label>
+            <div>
+              <span className="mb-1.5 block text-xs text-text-secondary">
+                Couleur
+              </span>
+              <ColorPicker
+                value={color}
+                onChange={setColor}
+                disabled={usedColors}
+              />
+            </div>
             {error && (
               <p className="flex items-center gap-1.5 text-xs text-red-300">
                 <AlertTriangle size={11} />
