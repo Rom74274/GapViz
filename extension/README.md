@@ -56,7 +56,12 @@ extension/
 - [x] **Commit 6** — Extension : capture token + interception CSV + POST extension-import
 - [x] **Commit 7** — Polling status côté Star Gap + redirect vers le projet créé
 - [ ] **Commit 7** — Polish (erreurs, session expirée, timeout)
-- [ ] **Commit 8** — Publication Chrome Web Store
+- [x] **Commit 8** — Fermeture auto onglet + doc publication Chrome Web Store
+
+## Publication
+
+Voir [CHROME_WEB_STORE.md](./CHROME_WEB_STORE.md) pour la procédure complète
+(métadonnées, descriptions, justifications de permissions, screenshots).
 
 ## Recharger après modification
 

@@ -22,29 +22,29 @@
   }
 
   // Lit le token depuis ?starGapToken=... dans l'URL. Si présent, le
-  // stocke dans chrome.storage.local pour le background script.
+  // stocke dans chrome.storage.local et notifie le background (qui
+  // capture le tabId via sender.tab.id pour pouvoir fermer l'onglet
+  // automatiquement après succès).
   function captureTokenFromUrl() {
     try {
       const params = new URLSearchParams(window.location.search);
       const token = params.get('starGapToken');
       if (!token) return;
 
-      // Extrait le domaine depuis target= (Ahrefs URL).
       const target = params.get('target') || '';
       const domain = target.replace(/^www\./, '').replace(/\/$/, '');
 
-      chrome.storage.local.set({
-        activeImportToken: {
-          token,
-          domain,
-          startedAt: Date.now(),
-        },
+      // Notifie le background pour qu'il enregistre token + tabId.
+      chrome.runtime.sendMessage({
+        type: 'sg_session_started',
+        token,
+        domain,
       });
+
       importStatus = 'active';
       console.log('[Star Gap] Token Star Gap détecté, session active', { domain });
 
-      // Nettoie l'URL pour ne pas garder le token en barre d'adresse.
-      // Évite que l'user partage/copie l'URL avec le token.
+      // Nettoie l'URL pour pas exposer le token.
       const cleanUrl = new URL(window.location.href);
       cleanUrl.searchParams.delete('starGapToken');
       window.history.replaceState({}, '', cleanUrl.toString());

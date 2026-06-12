@@ -120,6 +120,18 @@ async function handleCompletedDownload(meta) {
 
     console.log('[Star Gap] Import OK', result);
     await sendStatusToActiveTab('success', { project_id: result.project_id });
+
+    // Ferme automatiquement l'onglet Ahrefs 3s après le succès (laisse
+    // le temps à l'user de voir le banner 'Import terminé').
+    const tabIdToClose = activeImportToken.tabId;
+    setTimeout(() => {
+      if (tabIdToClose) {
+        chrome.tabs.remove(tabIdToClose).catch((e) => {
+          console.warn('[Star Gap] Fermeture onglet impossible', e);
+        });
+      }
+    }, 3000);
+
     await chrome.storage.local.remove('activeImportToken');
   } catch (e) {
     console.error('[Star Gap] Échec import', e);
@@ -149,9 +161,24 @@ async function sendStatusToActiveTab(status, extra = {}) {
   }
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === 'ping') {
     sendResponse({ ok: true, version: chrome.runtime.getManifest().version });
+    return false;
+  }
+  if (msg?.type === 'sg_session_started') {
+    // Capture le tabId de l'onglet Ahrefs pour pouvoir le fermer après succès.
+    const tabId = sender.tab?.id;
+    chrome.storage.local.set({
+      activeImportToken: {
+        token: msg.token,
+        domain: msg.domain,
+        tabId,
+        startedAt: Date.now(),
+      },
+    });
+    console.log('[Star Gap] Session import enregistrée', { tabId, domain: msg.domain });
+    sendResponse({ ok: true });
     return false;
   }
   return false;
