@@ -17,6 +17,9 @@ import type { SupabaseImportSession, ImportSessionStatus } from '@/lib/supabaseT
 export interface CreateImportSessionInput {
   domain: string;
   source?: string; // 'ahrefs' par défaut
+  // Si fourni → mode 'append' : on ajoute le domaine à ce projet existant
+  // au lieu de créer un nouveau projet.
+  existingProjectId?: string;
 }
 
 export interface CreateImportSessionResult {
@@ -38,6 +41,7 @@ export async function createImportSession(
       user_id: userData.user.id,
       domain: input.domain,
       source: input.source ?? 'ahrefs',
+      existing_project_id: input.existingProjectId ?? null,
       status: 'pending',
     })
     .select('token, expires_at')

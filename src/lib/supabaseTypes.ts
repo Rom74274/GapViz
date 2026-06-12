@@ -85,6 +85,9 @@ export type SupabaseImportSession = {
   project_id: string | null;
   domain: string | null;
   source: string | null;
+  // Si présent → mode 'append' : on ajoute le domaine à ce projet existant
+  // au lieu d'en créer un nouveau.
+  existing_project_id: string | null;
   error_message: string | null;
   created_at: string;
   expires_at: string;
@@ -149,6 +152,7 @@ export type Database = {
           project_id?: string | null;
           domain?: string | null;
           source?: string | null;
+          existing_project_id?: string | null;
           error_message?: string | null;
           expires_at?: string;
         };

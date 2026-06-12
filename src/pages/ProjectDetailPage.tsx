@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ArrowLeft, AlertCircle, Network, Table2 } from 'lucide-react';
+import { ArrowLeft, AlertCircle, Network, Table2, Plus } from 'lucide-react';
 import { db } from '@/lib/db';
 import { RunClusteringButton } from '@/components/clustering/RunClusteringButton';
+import { AddSiteFromAhrefs } from '@/components/onboarding/AddSiteFromAhrefs';
 import { GraphCanvas, type GraphCanvasHandle } from '@/components/graph/GraphCanvas';
 import { Starfield } from '@/components/Starfield';
 import { ClusterPanel } from '@/components/graph/ClusterPanel';
@@ -32,6 +33,7 @@ export function ProjectDetailPage() {
   const [remoteSyncState, setRemoteSyncState] = useState<
     'idle' | 'syncing' | 'synced' | 'absent' | 'error'
   >('idle');
+  const [addSiteOpen, setAddSiteOpen] = useState(false);
   const graphRef = useRef<GraphCanvasHandle>(null);
 
   // Sync Supabase → Dexie en write-through au mount du projet. Tout
@@ -133,10 +135,29 @@ export function ProjectDetailPage() {
           </span>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setAddSiteOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle bg-bg-surface px-3 py-1.5 text-xs text-text-secondary hover:border-accent/60 hover:text-accent"
+            title="Importer un autre site depuis Ahrefs"
+          >
+            <Plus size={12} />
+            Ajouter un site
+          </button>
           <ViewToggle view={view} onChange={setView} />
           <RunClusteringButton projectId={projectId!} variant="compact" />
         </div>
       </header>
+
+      <AddSiteFromAhrefs
+        projectId={projectId!}
+        open={addSiteOpen}
+        onClose={() => setAddSiteOpen(false)}
+        onImportComplete={() => {
+          // Le sync write-through dans AddSiteFromAhrefs a déjà repeuplé
+          // Dexie. Les useLiveQuery du graph / table re-rendent automatiquement.
+        }}
+      />
 
       <ProjectStats visibleKws={visibleKws} totalKws={allKws} />
 
