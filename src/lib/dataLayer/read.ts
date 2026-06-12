@@ -57,40 +57,45 @@ export async function fetchProjectDetailFromSupabase(
   const project = projectQ.data as SupabaseProject;
 
   // 2) Competitors + Keywords + Clusters en parallèle.
-  const [competitorsQ, keywordsQ, clustersQ] = await Promise.all([
-    supabase.from('competitors').select('*').eq('project_id', projectId),
-    supabase.from('keywords').select('*').eq('project_id', projectId),
-    supabase.from('clusters').select('*').eq('project_id', projectId),
-  ]);
-  for (const q of [competitorsQ, keywordsQ, clustersQ]) {
-    if (q.error) {
-      console.error('[dataLayer] fetchProjectDetail child error', q.error);
-      return { ok: false, reason: 'error', error: q.error };
-    }
-  }
-
-  const competitors = (competitorsQ.data ?? []) as SupabaseCompetitor[];
-  const keywords = (keywordsQ.data ?? []) as SupabaseKeyword[];
-  const clusters = (clustersQ.data ?? []) as SupabaseCluster[];
+  // PostgREST cap SELECT à 1000 rows par défaut → on utilise .range() en
+  // boucle pour récupérer tout (essentiel sur les KWs des gros projets).
+  const [competitors, keywords, clusters] = await Promise.all([
+    fetchAllPaginated<SupabaseCompetitor>('competitors', projectId),
+    fetchAllPaginated<SupabaseKeyword>('keywords', projectId),
+    fetchAllPaginated<SupabaseCluster>('clusters', projectId),
+  ]).catch((err) => {
+    console.error('[dataLayer] fetchProjectDetail child error', err);
+    throw err;
+  });
 
   // 3) Positions — chunked par batches de 200 keyword_ids pour rester
-  // sous la limite d'URL PostgREST (~8KB). Avec des UUIDs de 36 chars,
-  // 200 IDs = ~7200 chars, OK.
+  // sous la limite d'URL PostgREST (~8KB).
   let positions: SupabaseKeywordPosition[] = [];
   if (keywords.length > 0) {
     const allKwIds = keywords.map((k) => k.id);
     const CHUNK = 200;
     for (let i = 0; i < allKwIds.length; i += CHUNK) {
       const chunk = allKwIds.slice(i, i + CHUNK);
-      const positionsQ = await supabase
-        .from('keyword_positions')
-        .select('*')
-        .in('keyword_id', chunk);
-      if (positionsQ.error) {
-        console.error('[dataLayer] fetchProjectDetail positions error', positionsQ.error);
-        return { ok: false, reason: 'error', error: positionsQ.error };
+      // Chaque chunk de 200 keyword_ids peut générer plusieurs centaines
+      // de positions (1 par kw × source). Pagination via .range() pour
+      // bypass le cap 1000 de PostgREST si nécessaire.
+      let from = 0;
+      const PAGE = 1000;
+      while (true) {
+        const positionsQ = await supabase
+          .from('keyword_positions')
+          .select('*')
+          .in('keyword_id', chunk)
+          .range(from, from + PAGE - 1);
+        if (positionsQ.error) {
+          console.error('[dataLayer] fetchProjectDetail positions error', positionsQ.error);
+          return { ok: false, reason: 'error', error: positionsQ.error };
+        }
+        const batch = (positionsQ.data ?? []) as SupabaseKeywordPosition[];
+        positions = positions.concat(batch);
+        if (batch.length < PAGE) break;
+        from += PAGE;
       }
-      positions = positions.concat((positionsQ.data ?? []) as SupabaseKeywordPosition[]);
     }
   }
 
@@ -104,4 +109,27 @@ export async function fetchProjectDetailFromSupabase(
       clusters,
     }),
   };
+}
+
+// Helper : fetch toutes les rows d'une table filtrée par project_id,
+// en paginant pour bypass le cap 1000 de PostgREST.
+async function fetchAllPaginated<T>(table: string, projectId: string): Promise<T[]> {
+  const PAGE = 1000;
+  const all: T[] = [];
+  let from = 0;
+  // Sécurité : max 50 itérations = 50k rows max par table. Au-delà, on
+  // arrête (un projet avec >50k KWs poserait d'autres problèmes de perf).
+  for (let i = 0; i < 50; i++) {
+    const q = await supabase
+      .from(table)
+      .select('*')
+      .eq('project_id', projectId)
+      .range(from, from + PAGE - 1);
+    if (q.error) throw q.error;
+    const batch = (q.data ?? []) as T[];
+    all.push(...batch);
+    if (batch.length < PAGE) break;
+    from += PAGE;
+  }
+  return all;
 }
