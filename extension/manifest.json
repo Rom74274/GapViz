@@ -22,6 +22,15 @@
       "js": ["content-script.js"],
       "css": ["content-style.css"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://localhost/*",
+        "*://127.0.0.1/*",
+        "*://rom74274.github.io/*"
+      ],
+      "js": ["stargap-content.js"],
+      "run_at": "document_start"
     }
   ],
   "action": {

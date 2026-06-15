@@ -11,6 +11,7 @@ import { PricingPage } from '@/pages/PricingPage';
 import { LegalPage } from '@/pages/LegalPage';
 import { PrivacyPage } from '@/pages/PrivacyPage';
 import { CgvPage } from '@/pages/CgvPage';
+import { InstallExtensionPage } from '@/pages/InstallExtensionPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 import { initAuth } from '@/lib/authStore';
 
@@ -28,6 +29,7 @@ function App() {
           <Route path="legal" element={<LegalPage />} />
           <Route path="privacy" element={<PrivacyPage />} />
           <Route path="cgv" element={<CgvPage />} />
+          <Route path="install" element={<InstallExtensionPage />} />
 
           {/* Tout le reste passe par AuthGuard + Layout. */}
           <Route element={<AuthGuard />}>

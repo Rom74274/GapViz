@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ExternalLink, Loader2, Sparkles, X, Zap, AlertTriangle } from 'lucide-react';
+import {
+  ExternalLink,
+  Loader2,
+  Sparkles,
+  X,
+  Zap,
+  AlertTriangle,
+  Puzzle,
+} from 'lucide-react';
 import {
   createImportSession,
   buildAhrefsImportUrl,
@@ -13,6 +21,10 @@ import { supabase } from '@/lib/supabase';
 import { pickNextColor, PALETTE } from '@/lib/colors';
 import { ColorPicker } from '@/components/onboarding/ColorPicker';
 import { DomainAutocomplete } from '@/components/onboarding/DomainAutocomplete';
+import {
+  EXTENSION_INSTALL_URL,
+  useExtensionInstalled,
+} from '@/lib/extensionInstall';
 import { cn } from '@/lib/utils';
 
 // ---------------------------------------------------------------------------
@@ -43,6 +55,7 @@ export function AddSiteFromAhrefs({ projectId, open, onClose, onImportComplete }
   const [starting, setStarting] = useState(false);
   const [color, setColor] = useState<string>(PALETTE[0]!);
   const pollAbortRef = useRef(false);
+  const { installed: extensionInstalled } = useExtensionInstalled();
 
   const existingCompetitors = useLiveQuery(
     () => db.competitors.where('projectId').equals(projectId).toArray(),
@@ -214,7 +227,38 @@ export function AddSiteFromAhrefs({ projectId, open, onClose, onImportComplete }
           </div>
         </div>
 
-        {status === 'idle' && (
+        {status === 'idle' && !extensionInstalled && (
+          <div className="mt-5 rounded-md border border-accent/30 bg-accent/5 p-4">
+            <div className="flex items-start gap-3">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent">
+                <Puzzle size={14} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-text-primary">
+                  Extension Chrome requise
+                </p>
+                <p className="mt-1 text-xs text-text-secondary">
+                  Pour importer depuis Ahrefs en 1 clic, installe l'extension Star Gap.
+                  Elle détecte le téléchargement du CSV et l'envoie automatiquement.
+                </p>
+                <a
+                  href={EXTENSION_INSTALL_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover"
+                >
+                  <ExternalLink size={11} />
+                  Installer l'extension
+                </a>
+                <p className="mt-2 text-[11px] text-text-muted">
+                  La modale se mettra à jour automatiquement une fois installée.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {status === 'idle' && extensionInstalled && (
           <div className="mt-5 space-y-3">
             <label className="block">
               <span className="mb-1 block text-xs text-text-secondary">
