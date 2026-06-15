@@ -6,7 +6,24 @@
 const EXTENSION_IMPORT_URL =
   'https://kngkvaqovdnysmqrvxtj.functions.supabase.co/extension-import';
 
-const AHREFS_DOMAIN = 'ahrefs.com';
+// Configuration des sources d'import supportées : on identifie une source
+// par un fragment d'URL présent dans url / finalUrl / referrer du download.
+const IMPORT_SOURCES = [
+  { id: 'ahrefs', urlMatch: 'ahrefs.com' },
+  { id: 'semrush', urlMatch: 'semrush.com' },
+];
+
+function detectSourceFromDownload(item) {
+  const haystacks = [
+    item.url || '',
+    item.finalUrl || '',
+    item.referrer || '',
+  ].join(' ');
+  for (const s of IMPORT_SOURCES) {
+    if (haystacks.includes(s.urlMatch)) return s.id;
+  }
+  return null;
+}
 
 // Map downloadId → metadata (pour relier onChanged à onCreated).
 const trackedDownloads = new Map();
@@ -17,10 +34,8 @@ chrome.downloads.onCreated.addListener((downloadItem) => {
   const filename = downloadItem.filename || '';
   const referrer = downloadItem.referrer || '';
 
-  const isFromAhrefs =
-    url.includes(AHREFS_DOMAIN) ||
-    finalUrl.includes(AHREFS_DOMAIN) ||
-    referrer.includes(AHREFS_DOMAIN);
+  const source = detectSourceFromDownload(downloadItem);
+  if (!source) return;
 
   const looksLikeCsv =
     /\.csv($|\?)/i.test(url) ||
@@ -28,15 +43,16 @@ chrome.downloads.onCreated.addListener((downloadItem) => {
     /\.csv$/i.test(filename) ||
     downloadItem.mime === 'text/csv';
 
-  if (!isFromAhrefs || !looksLikeCsv) return;
+  if (!looksLikeCsv) return;
 
-  console.log('[Star Gap] Download Ahrefs CSV détecté', {
+  console.log(`[Star Gap] Download ${source} CSV détecté`, {
     id: downloadItem.id,
     finalUrl: finalUrl.slice(0, 120),
     filename,
   });
 
   trackedDownloads.set(downloadItem.id, {
+    source,
     sourceUrl: url,
     finalUrl,
     filename,
@@ -93,20 +109,20 @@ async function handleCompletedDownload(meta) {
     });
 
     if (!csvRes.ok) {
-      throw new Error(`Refetch Ahrefs : HTTP ${csvRes.status} (URL one-shot ?)`);
+      throw new Error(`Refetch ${meta.source} : HTTP ${csvRes.status} (URL one-shot ?)`);
     }
 
     const csvBlob = await csvRes.blob();
-    if (csvBlob.size === 0) throw new Error('CSV vide reçu d\'Ahrefs');
+    if (csvBlob.size === 0) throw new Error(`CSV vide reçu de ${meta.source}`);
 
-    console.log(`[Star Gap] CSV récupéré : ${csvBlob.size} bytes`);
+    console.log(`[Star Gap] CSV ${meta.source} récupéré : ${csvBlob.size} bytes`);
 
     // 3) POST à l'Edge Function avec FormData.
     const form = new FormData();
     form.append('token', activeImportToken.token);
     form.append('domain', activeImportToken.domain || '');
-    form.append('source', 'ahrefs');
-    form.append('csv', csvBlob, meta.filename || 'ahrefs-export.csv');
+    form.append('source', meta.source);
+    form.append('csv', csvBlob, meta.filename || `${meta.source}-export.csv`);
 
     const importRes = await fetch(EXTENSION_IMPORT_URL, {
       method: 'POST',
@@ -144,19 +160,20 @@ async function handleCompletedDownload(meta) {
 
 async function sendStatusToActiveTab(status, extra = {}) {
   try {
-    const [tab] = await chrome.tabs.query({
+    const tabs = await chrome.tabs.query({
       active: true,
-      url: '*://app.ahrefs.com/*',
+      url: ['*://app.ahrefs.com/*', '*://*.semrush.com/*'],
     });
-    if (tab?.id) {
-      chrome.tabs.sendMessage(tab.id, {
-        type: 'sg_import_status',
-        status,
-        ...extra,
-      });
+    for (const tab of tabs) {
+      if (tab?.id) {
+        chrome.tabs.sendMessage(tab.id, {
+          type: 'sg_import_status',
+          status,
+          ...extra,
+        });
+      }
     }
   } catch (e) {
-    // Le content script peut ne plus être chargé, pas grave.
     console.warn('[Star Gap] sendStatusToActiveTab fail', e);
   }
 }

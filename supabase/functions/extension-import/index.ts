@@ -16,14 +16,15 @@
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
+import { type ParsedRow } from './parsers/_shared.ts';
+import { parseAhrefsCsv } from './parsers/ahrefs.ts';
+import { parseSemrushCsv } from './parsers/semrush.ts';
 
-interface ParsedRow {
-  keyword: string;
-  volume: number | null;
-  position: number | null;
-  kd: number | null;
-  cpc: number | null;
-  url: string | null;
+type ImportSource = 'ahrefs' | 'semrush';
+
+function parseCsvForSource(source: ImportSource, buffer: ArrayBuffer): ParsedRow[] {
+  if (source === 'semrush') return parseSemrushCsv(buffer);
+  return parseAhrefsCsv(buffer);
 }
 
 Deno.serve(async (req) => {
@@ -39,14 +40,16 @@ Deno.serve(async (req) => {
     let token = '';
     let csvBuffer: ArrayBuffer | null = null;
     let providedDomain = '';
-    let source = 'ahrefs';
+    let source: ImportSource = 'ahrefs';
 
     const contentType = req.headers.get('content-type') || '';
     if (contentType.includes('multipart/form-data')) {
       const form = await req.formData();
       token = (form.get('token') || '').toString();
       providedDomain = (form.get('domain') || '').toString();
-      source = (form.get('source') || 'ahrefs').toString();
+      source = ((form.get('source') || 'ahrefs').toString() === 'semrush'
+        ? 'semrush'
+        : 'ahrefs') as ImportSource;
       const csvFile = form.get('csv') as File | null;
       if (csvFile) csvBuffer = await csvFile.arrayBuffer();
     } else if (contentType.includes('application/json')) {
@@ -54,7 +57,7 @@ Deno.serve(async (req) => {
       const body = await req.json();
       token = body.token || '';
       providedDomain = body.domain || '';
-      source = body.source || 'ahrefs';
+      source = (body.source === 'semrush' ? 'semrush' : 'ahrefs') as ImportSource;
       if (body.csv_base64) {
         csvBuffer = base64ToArrayBuffer(body.csv_base64);
       }
@@ -93,11 +96,10 @@ Deno.serve(async (req) => {
     const domain = providedDomain || session.domain || 'imported.local';
     const appendToProjectId = session.existing_project_id;
 
-    // 4) Décode + parse le CSV Ahrefs.
-    const csvText = decodeAhrefsCsv(csvBuffer);
+    // 4) Décode + parse le CSV selon la source.
     let rows: ParsedRow[];
     try {
-      rows = parseAhrefsCsv(csvText);
+      rows = parseCsvForSource(source, csvBuffer);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       await supabase
@@ -373,161 +375,6 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes.buffer;
-}
-
-// -----------------------------------------------------------------------------
-// CSV Ahrefs : encoding UTF-16 LE (avec BOM) le plus souvent, séparateur tab.
-// Detection BOM → décode dans le bon encodage, sinon UTF-8.
-// -----------------------------------------------------------------------------
-
-function decodeAhrefsCsv(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
-    return new TextDecoder('utf-16le').decode(bytes);
-  }
-  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
-    return new TextDecoder('utf-16be').decode(bytes);
-  }
-  return new TextDecoder('utf-8').decode(bytes);
-}
-
-function parseAhrefsCsv(text: string): ParsedRow[] {
-  // Strip BOM résiduel.
-  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
-
-  // Détecte séparateur sur la 1ère ligne, AVANT de tokenize les guillemets.
-  // (suffit, Ahrefs ne mélange pas tab et virgule sur la même ligne).
-  const firstNl = text.search(/\r?\n/);
-  const firstLine = firstNl > 0 ? text.slice(0, firstNl) : text;
-  const sep = firstLine.includes('\t') ? '\t' : ',';
-
-  const allRows = parseCsvText(text, sep);
-  if (allRows.length < 2) throw new Error('CSV trop court (manque headers ou données)');
-
-  const headers = allRows[0]!.map((h) => h.toLowerCase().trim());
-
-  const colIndex = (...candidates: string[]): number => {
-    // Match exact d'abord, puis fuzzy (includes) en fallback.
-    for (const c of candidates) {
-      const lc = c.toLowerCase();
-      const exact = headers.findIndex((h) => h === lc);
-      if (exact >= 0) return exact;
-    }
-    for (const c of candidates) {
-      const lc = c.toLowerCase();
-      const fuzzy = headers.findIndex((h) => h.includes(lc));
-      if (fuzzy >= 0) return fuzzy;
-    }
-    return -1;
-  };
-
-  const iKeyword = colIndex('keyword');
-  const iVolume = colIndex('volume', 'search volume');
-  const iPosition = colIndex('current position', 'position');
-  const iKd = colIndex('kd', 'keyword difficulty', 'difficulty');
-  const iCpc = colIndex('cpc');
-  const iUrl = colIndex('current url', 'url');
-
-  if (iKeyword < 0) {
-    throw new Error('Colonne "Keyword" introuvable dans les headers : ' + headers.join(' | '));
-  }
-
-  const rows: ParsedRow[] = [];
-  for (let i = 1; i < allRows.length; i++) {
-    const cells = allRows[i]!;
-    const keyword = (cells[iKeyword] || '').trim();
-    if (!keyword) continue;
-
-    // Clamping défensif : position ∈ [1, 1000], kd ∈ [0, 100].
-    // Si une valeur dépasse, c'est qu'on a un mauvais mapping → on null
-    // pour éviter de polluer la DB.
-    const rawPos = iPosition >= 0 ? parseNum(cells[iPosition]) : null;
-    const position = rawPos !== null && (rawPos < 1 || rawPos > 1000) ? null : rawPos;
-
-    const rawKd = iKd >= 0 ? parseNum(cells[iKd]) : null;
-    const kd = rawKd !== null && (rawKd < 0 || rawKd > 100) ? null : rawKd;
-
-    rows.push({
-      keyword,
-      volume: iVolume >= 0 ? parseNum(cells[iVolume]) : null,
-      position,
-      kd,
-      cpc: iCpc >= 0 ? parseNum(cells[iCpc]) : null,
-      url: iUrl >= 0 ? (cells[iUrl] || '').trim() || null : null,
-    });
-  }
-  return rows;
-}
-
-// Vrai parser CSV qui respecte les guillemets (RFC 4180-like).
-// Gère :
-//   - Champs entre guillemets `"..."` qui peuvent contenir le séparateur
-//   - Guillemets échappés `""` → `"`
-//   - CRLF / LF / CR comme line ending
-//   - Champs multilignes (un `"..."` peut contenir des newlines)
-function parseCsvText(text: string, sep: string): string[][] {
-  const rows: string[][] = [];
-  let current = '';
-  let row: string[] = [];
-  let inQuotes = false;
-  let i = 0;
-  const N = text.length;
-
-  while (i < N) {
-    const ch = text[i]!;
-    if (inQuotes) {
-      if (ch === '"') {
-        if (text[i + 1] === '"') {
-          current += '"';
-          i += 2;
-          continue;
-        }
-        inQuotes = false;
-        i++;
-        continue;
-      }
-      current += ch;
-      i++;
-      continue;
-    }
-    // Hors quotes :
-    if (ch === '"') {
-      inQuotes = true;
-      i++;
-      continue;
-    }
-    if (ch === sep) {
-      row.push(current);
-      current = '';
-      i++;
-      continue;
-    }
-    if (ch === '\r' || ch === '\n') {
-      row.push(current);
-      current = '';
-      if (row.length > 1 || row[0] !== '') rows.push(row);
-      row = [];
-      // Skip CRLF en 1 fois
-      if (ch === '\r' && text[i + 1] === '\n') i += 2;
-      else i++;
-      continue;
-    }
-    current += ch;
-    i++;
-  }
-  // Push dernière cellule + ligne si non terminée par newline.
-  if (current.length > 0 || row.length > 0) {
-    row.push(current);
-    if (row.length > 1 || row[0] !== '') rows.push(row);
-  }
-  return rows;
-}
-
-function parseNum(s: string | undefined): number | null {
-  if (!s) return null;
-  const cleaned = s.replace(/[$%]/g, '').replace(/\s+/g, '').replace(/,/g, '.');
-  const n = parseFloat(cleaned);
-  return Number.isFinite(n) ? n : null;
 }
 
 function maxOrNull(values: (number | null)[]): number | null {

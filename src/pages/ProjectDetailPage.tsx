@@ -4,7 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowLeft, AlertCircle, Network, Table2, Plus } from 'lucide-react';
 import { db } from '@/lib/db';
 import { RunClusteringButton } from '@/components/clustering/RunClusteringButton';
-import { AddSiteFromAhrefs } from '@/components/onboarding/AddSiteFromAhrefs';
+import { AddSiteFromExport } from '@/components/onboarding/AddSiteFromExport';
 import { GraphCanvas, type GraphCanvasHandle } from '@/components/graph/GraphCanvas';
 import { Starfield } from '@/components/Starfield';
 import { ClusterPanel } from '@/components/graph/ClusterPanel';
@@ -149,12 +149,12 @@ export function ProjectDetailPage() {
         </div>
       </header>
 
-      <AddSiteFromAhrefs
+      <AddSiteFromExport
         projectId={projectId!}
         open={addSiteOpen}
         onClose={() => setAddSiteOpen(false)}
         onImportComplete={() => {
-          // Le sync write-through dans AddSiteFromAhrefs a déjà repeuplé
+          // Le sync write-through dans AddSiteFromExport a déjà repeuplé
           // Dexie. Les useLiveQuery du graph / table re-rendent automatiquement.
         }}
       />

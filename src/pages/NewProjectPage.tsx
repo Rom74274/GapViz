@@ -7,7 +7,9 @@ import {
   createProjectInSupabase,
   createImportSession,
   getImportSession,
-  buildAhrefsImportUrl,
+  buildImportUrl,
+  IMPORT_SOURCES,
+  type ImportSource,
   useSupabaseProjects,
   type CreateProjectProgress,
 } from '@/lib/dataLayer';
@@ -53,6 +55,7 @@ export function NewProjectPage() {
   );
 
   // État import via extension Chrome.
+  const [importSource, setImportSource] = useState<ImportSource>('ahrefs');
   const [importToken, setImportToken] = useState<string | null>(null);
   const [importStarting, setImportStarting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
@@ -171,7 +174,7 @@ export function NewProjectPage() {
     }
   };
 
-  const startAhrefsImport = async () => {
+  const startImport = async () => {
     const domain = myDomain.trim();
     if (!domain) {
       setImportError('Renseigne d\'abord ton domaine principal ci-dessus.');
@@ -180,12 +183,12 @@ export function NewProjectPage() {
     setImportError(null);
     setImportStarting(true);
     try {
-      const { token } = await createImportSession({ domain, source: 'ahrefs' });
+      const { token } = await createImportSession({ domain, source: importSource });
       setImportToken(token);
-      const url = buildAhrefsImportUrl(domain, token);
+      const url = buildImportUrl(importSource, domain, token);
       window.open(url, '_blank');
     } catch (e) {
-      console.error('[ahrefs-import] error', e);
+      console.error('[import] error', e);
       setImportError(e instanceof Error ? e.message : 'Erreur création session import');
     } finally {
       setImportStarting(false);
@@ -342,7 +345,7 @@ export function NewProjectPage() {
         </div>
       </section>
 
-      {/* Import via extension Chrome (Ahrefs) */}
+      {/* Import via extension Chrome (Ahrefs / Semrush) */}
       <section className="mt-6">
         <div className="rounded-lg border border-accent/30 bg-accent/[0.04] p-4">
           <div className="flex items-start gap-3">
@@ -351,24 +354,42 @@ export function NewProjectPage() {
             </span>
             <div className="min-w-0 flex-1">
               <h3 className="text-sm font-semibold">
-                Importer depuis Ahrefs{' '}
+                Importer depuis Ahrefs ou Semrush{' '}
                 <span className="ml-1 rounded-full bg-accent/15 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-accent">
                   Extension
                 </span>
               </h3>
               <p className="mt-1 text-xs text-text-secondary">
-                Au lieu d'exporter manuellement le CSV, ouvre Ahrefs et l'extension Star Gap
-                envoie tes mots-clés directement dans ton projet. Renseigne d'abord ton
-                domaine principal ci-dessus.
+                Au lieu d'exporter manuellement le CSV, ouvre Ahrefs ou Semrush et
+                l'extension Star Gap envoie tes mots-clés directement dans ton projet.
+                Renseigne d'abord ton domaine principal ci-dessus.
               </p>
+              <div className="mt-3 inline-flex rounded-md border border-border-subtle bg-bg-surface p-0.5">
+                {IMPORT_SOURCES.map((s) => (
+                  <button
+                    key={s.value}
+                    type="button"
+                    onClick={() => setImportSource(s.value)}
+                    className={
+                      'rounded-sm px-3 py-1 text-xs transition-colors ' +
+                      (importSource === s.value
+                        ? 'bg-bg-elevated text-text-primary'
+                        : 'text-text-muted hover:text-text-primary')
+                    }
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
               {importToken && importStatus === 'waiting' && (
                 <div className="mt-3 rounded-md border border-accent/30 bg-bg-surface p-3 text-xs">
                   <p className="flex items-center gap-2 font-medium text-accent">
                     <Loader2 size={12} className="animate-spin" />
-                    En attente du clic Export sur Ahrefs…
+                    En attente du clic Export sur{' '}
+                    {IMPORT_SOURCES.find((s) => s.value === importSource)?.label}…
                   </p>
                   <p className="mt-1 text-text-secondary">
-                    Connecte-toi à Ahrefs si besoin, puis clique sur{' '}
+                    Connecte-toi si besoin, puis clique sur{' '}
                     <strong className="text-text-primary">Export → CSV</strong> au-dessus
                     de la table. L'extension détecte le téléchargement et envoie tes
                     mots-clés vers Star Gap.
@@ -400,7 +421,7 @@ export function NewProjectPage() {
             </div>
             <button
               type="button"
-              onClick={startAhrefsImport}
+              onClick={startImport}
               disabled={importStarting || !myDomain.trim()}
               className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-2 text-xs font-medium text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -409,7 +430,9 @@ export function NewProjectPage() {
               ) : (
                 <ExternalLink size={12} />
               )}
-              {importToken ? 'Relancer' : 'Ouvrir Ahrefs'}
+              {importToken
+                ? 'Relancer'
+                : `Ouvrir ${IMPORT_SOURCES.find((s) => s.value === importSource)?.label}`}
             </button>
           </div>
         </div>

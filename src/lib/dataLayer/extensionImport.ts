@@ -82,6 +82,27 @@ export async function cancelImportSession(token: string): Promise<void> {
     .eq('status', 'pending');
 }
 
+// ---------------------------------------------------------------------------
+// Sources d'import supportées. Ajout d'une nouvelle source = ajout d'un cas
+// dans buildImportUrl + un parser côté Edge Function.
+// ---------------------------------------------------------------------------
+
+export type ImportSource = 'ahrefs' | 'semrush';
+
+export const IMPORT_SOURCES: { value: ImportSource; label: string }[] = [
+  { value: 'ahrefs', label: 'Ahrefs' },
+  { value: 'semrush', label: 'Semrush' },
+];
+
+export function buildImportUrl(
+  source: ImportSource,
+  domain: string,
+  token: string,
+): string {
+  if (source === 'semrush') return buildSemrushImportUrl(domain, token);
+  return buildAhrefsImportUrl(domain, token);
+}
+
 // URL Ahrefs Organic Keywords avec le token Star Gap en param.
 export function buildAhrefsImportUrl(domain: string, token: string): string {
   const target = encodeURIComponent(domain);
@@ -91,6 +112,18 @@ export function buildAhrefsImportUrl(domain: string, token: string): string {
     `&country=allByLocation` +
     `&mode=subdomains` +
     `&limit=50` +
+    `&starGapToken=${encodeURIComponent(token)}`
+  );
+}
+
+// URL Semrush Organic Research (Positions) avec le token Star Gap en param.
+export function buildSemrushImportUrl(domain: string, token: string): string {
+  const q = encodeURIComponent(domain);
+  return (
+    `https://www.semrush.com/analytics/organic/positions/` +
+    `?db=us` +
+    `&q=${q}` +
+    `&searchType=domain` +
     `&starGapToken=${encodeURIComponent(token)}`
   );
 }

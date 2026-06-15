@@ -11,7 +11,9 @@ import {
 } from 'lucide-react';
 import {
   createImportSession,
-  buildAhrefsImportUrl,
+  buildImportUrl,
+  IMPORT_SOURCES,
+  type ImportSource,
   getImportSession,
   fetchProjectDetailFromSupabase,
   syncProjectToDexie,
@@ -28,9 +30,9 @@ import {
 import { cn } from '@/lib/utils';
 
 // ---------------------------------------------------------------------------
-// Modal "Ajouter un site depuis Ahrefs" — utilisé sur ProjectDetailPage pour
-// importer les KWs d'un concurrent (ou rafraîchir ceux d'un site existant)
-// via l'extension Chrome Star Gap.
+// Modal "Ajouter un site depuis Ahrefs / Semrush" — utilisé sur
+// ProjectDetailPage pour importer les KWs d'un concurrent (ou rafraîchir
+// ceux d'un site existant) via l'extension Chrome Star Gap.
 //
 // Diffère de NewProjectPage import : ici on passe existingProjectId à
 // createImportSession → l'Edge Function merge dans le projet courant
@@ -47,8 +49,9 @@ interface Props {
 
 type Status = 'idle' | 'waiting' | 'completed' | 'failed' | 'expired';
 
-export function AddSiteFromAhrefs({ projectId, open, onClose, onImportComplete }: Props) {
+export function AddSiteFromExport({ projectId, open, onClose, onImportComplete }: Props) {
   const [domain, setDomain] = useState('');
+  const [source, setSource] = useState<ImportSource>('ahrefs');
   const [token, setToken] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -179,11 +182,11 @@ export function AddSiteFromAhrefs({ projectId, open, onClose, onImportComplete }
     try {
       const { token: newToken } = await createImportSession({
         domain: cleanDomain,
-        source: 'ahrefs',
+        source,
         existingProjectId: projectId,
       });
       setToken(newToken);
-      const url = buildAhrefsImportUrl(cleanDomain, newToken);
+      const url = buildImportUrl(source, cleanDomain, newToken);
       window.open(url, '_blank');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur création session');
@@ -218,11 +221,11 @@ export function AddSiteFromAhrefs({ projectId, open, onClose, onImportComplete }
           </span>
           <div className="min-w-0 flex-1">
             <h2 className="text-base font-semibold tracking-tight">
-              Ajouter un site depuis Ahrefs
+              Ajouter un site
             </h2>
             <p className="mt-1 text-xs text-text-secondary">
-              Importe les mots-clés d'un concurrent dans ce projet. Si le domaine
-              existe déjà, ses positions seront rafraîchies.
+              Importe les mots-clés d'un concurrent depuis Ahrefs ou Semrush.
+              Si le domaine existe déjà, ses positions seront rafraîchies.
             </p>
           </div>
         </div>
@@ -238,8 +241,9 @@ export function AddSiteFromAhrefs({ projectId, open, onClose, onImportComplete }
                   Extension Chrome requise
                 </p>
                 <p className="mt-1 text-xs text-text-secondary">
-                  Pour importer depuis Ahrefs en 1 clic, installe l'extension Star Gap.
-                  Elle détecte le téléchargement du CSV et l'envoie automatiquement.
+                  Pour importer depuis Ahrefs ou Semrush en 1 clic, installe
+                  l'extension Star Gap. Elle détecte le téléchargement du CSV
+                  et l'envoie automatiquement.
                 </p>
                 <a
                   href={EXTENSION_INSTALL_URL}
@@ -260,6 +264,28 @@ export function AddSiteFromAhrefs({ projectId, open, onClose, onImportComplete }
 
         {status === 'idle' && extensionInstalled && (
           <div className="mt-5 space-y-3">
+            <div>
+              <span className="mb-1.5 block text-xs text-text-secondary">
+                Source
+              </span>
+              <div className="inline-flex rounded-md border border-border-subtle p-0.5">
+                {IMPORT_SOURCES.map((s) => (
+                  <button
+                    key={s.value}
+                    type="button"
+                    onClick={() => setSource(s.value)}
+                    className={cn(
+                      'rounded-sm px-3 py-1 text-xs transition-colors',
+                      source === s.value
+                        ? 'bg-bg-elevated text-text-primary'
+                        : 'text-text-muted hover:text-text-primary',
+                    )}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <label className="block">
               <span className="mb-1 block text-xs text-text-secondary">
                 Domaine du site
@@ -308,7 +334,7 @@ export function AddSiteFromAhrefs({ projectId, open, onClose, onImportComplete }
                 ) : (
                   <ExternalLink size={14} />
                 )}
-                Ouvrir Ahrefs
+                Ouvrir {IMPORT_SOURCES.find((s) => s.value === source)?.label}
               </button>
             </div>
           </div>
@@ -318,10 +344,11 @@ export function AddSiteFromAhrefs({ projectId, open, onClose, onImportComplete }
           <div className="mt-5 rounded-md border border-accent/30 bg-bg-base p-3 text-xs">
             <p className="flex items-center gap-2 font-medium text-accent">
               <Loader2 size={12} className="animate-spin" />
-              En attente du clic Export sur Ahrefs…
+              En attente du clic Export sur{' '}
+              {IMPORT_SOURCES.find((s) => s.value === source)?.label}…
             </p>
             <p className="mt-1 text-text-secondary">
-              Connecte-toi à Ahrefs si besoin, puis clique sur{' '}
+              Connecte-toi si besoin, puis clique sur{' '}
               <strong className="text-text-primary">Export → CSV</strong>{' '}
               au-dessus de la table.
             </p>

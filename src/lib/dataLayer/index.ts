@@ -47,6 +47,10 @@ export {
   getImportSession,
   cancelImportSession,
   buildAhrefsImportUrl,
+  buildSemrushImportUrl,
+  buildImportUrl,
+  IMPORT_SOURCES,
+  type ImportSource,
   type CreateImportSessionInput,
   type CreateImportSessionResult,
 } from './extensionImport';

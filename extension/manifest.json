@@ -11,6 +11,7 @@
   ],
   "host_permissions": [
     "*://app.ahrefs.com/*",
+    "*://*.semrush.com/*",
     "*://kngkvaqovdnysmqrvxtj.functions.supabase.co/*"
   ],
   "background": {
@@ -20,6 +21,12 @@
     {
       "matches": ["*://app.ahrefs.com/*"],
       "js": ["content-script.js"],
+      "css": ["content-style.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://*.semrush.com/*"],
+      "js": ["content-semrush.js"],
       "css": ["content-style.css"],
       "run_at": "document_idle"
     },
