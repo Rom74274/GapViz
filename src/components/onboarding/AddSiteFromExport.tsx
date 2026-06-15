@@ -64,6 +64,8 @@ export function AddSiteFromExport({ projectId, open, onClose, onImportComplete }
     () => db.competitors.where('projectId').equals(projectId).toArray(),
     [projectId],
   );
+  const project = useLiveQuery(() => db.projects.get(projectId), [projectId]);
+  const projectCountry = project?.country ?? null;
   const usedColors = useMemo(
     () => (existingCompetitors ?? []).map((c) => c.color),
     [existingCompetitors],
@@ -186,7 +188,7 @@ export function AddSiteFromExport({ projectId, open, onClose, onImportComplete }
         existingProjectId: projectId,
       });
       setToken(newToken);
-      const url = buildImportUrl(source, cleanDomain, newToken);
+      const url = buildImportUrl(source, cleanDomain, newToken, projectCountry);
       window.open(url, '_blank');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur création session');

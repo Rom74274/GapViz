@@ -98,12 +98,15 @@ export function buildImportUrl(
   source: ImportSource,
   domain: string,
   token: string,
+  country?: string | null,
 ): string {
-  if (source === 'semrush') return buildSemrushImportUrl(domain, token);
+  if (source === 'semrush') return buildSemrushImportUrl(domain, token, country);
   return buildAhrefsImportUrl(domain, token);
 }
 
 // URL Ahrefs Organic Keywords avec le token Star Gap en param.
+// country=allByLocation → Ahrefs agrège toutes les géos (le pays du projet
+// est appliqué côté ingestion, pas côté UI Ahrefs).
 export function buildAhrefsImportUrl(domain: string, token: string): string {
   const target = encodeURIComponent(domain);
   return (
@@ -116,12 +119,26 @@ export function buildAhrefsImportUrl(domain: string, token: string): string {
   );
 }
 
+// Semrush utilise le paramètre `db` (ISO 3166-1 alpha-2 minuscule) avec
+// quelques exceptions historiques (UK au lieu de GB).
+function semrushDbFromCountry(country: string | null | undefined): string {
+  if (!country) return 'us';
+  const c = country.trim().toLowerCase();
+  if (c === 'gb') return 'uk';
+  return c || 'us';
+}
+
 // URL Semrush Organic Research (Positions) avec le token Star Gap en param.
-export function buildSemrushImportUrl(domain: string, token: string): string {
+export function buildSemrushImportUrl(
+  domain: string,
+  token: string,
+  country?: string | null,
+): string {
   const q = encodeURIComponent(domain);
+  const db = semrushDbFromCountry(country);
   return (
     `https://www.semrush.com/analytics/organic/positions/` +
-    `?db=us` +
+    `?db=${db}` +
     `&q=${q}` +
     `&searchType=domain` +
     `&starGapToken=${encodeURIComponent(token)}`

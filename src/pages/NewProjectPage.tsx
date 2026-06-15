@@ -185,7 +185,7 @@ export function NewProjectPage() {
     try {
       const { token } = await createImportSession({ domain, source: importSource });
       setImportToken(token);
-      const url = buildImportUrl(importSource, domain, token);
+      const url = buildImportUrl(importSource, domain, token, country);
       window.open(url, '_blank');
     } catch (e) {
       console.error('[import] error', e);
