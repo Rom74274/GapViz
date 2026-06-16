@@ -37,6 +37,7 @@
       // Notifie le background pour qu'il enregistre token + tabId.
       chrome.runtime.sendMessage({
         type: 'sg_session_started',
+        source: 'ahrefs',
         token,
         domain,
       });

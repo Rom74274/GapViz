@@ -80,18 +80,23 @@ chrome.downloads.onChanged.addListener(async (delta) => {
 });
 
 async function handleCompletedDownload(meta) {
-  // 1) Lit le token actif depuis storage.
-  const { activeImportToken } = await chrome.storage.local.get('activeImportToken');
+  // 1) Lit le token actif pour CETTE source précise. Stocker les tokens
+  // keyés par source évite qu'un download Ahrefs déclenche un upload avec
+  // le token d'une session Semrush en parallèle (et vice-versa).
+  const { activeImportTokens } = await chrome.storage.local.get('activeImportTokens');
+  const tokens = activeImportTokens || {};
+  const activeImportToken = tokens[meta.source];
   if (!activeImportToken) {
-    console.log('[Star Gap] Pas de token actif, on ignore ce download');
+    console.log(`[Star Gap] Pas de token actif pour ${meta.source}, on ignore ce download`);
     return;
   }
 
   // Vérifie que le token n'est pas trop vieux (10 min côté serveur).
   const age = Date.now() - (activeImportToken.startedAt || 0);
   if (age > 10 * 60 * 1000) {
-    console.warn('[Star Gap] Token expiré (>10 min), on ignore');
-    await chrome.storage.local.remove('activeImportToken');
+    console.warn(`[Star Gap] Token ${meta.source} expiré (>10 min), on ignore`);
+    delete tokens[meta.source];
+    await chrome.storage.local.set({ activeImportTokens: tokens });
     return;
   }
 
@@ -149,7 +154,11 @@ async function handleCompletedDownload(meta) {
       }
     }, 3000);
 
-    await chrome.storage.local.remove('activeImportToken');
+    // Clear uniquement le token de cette source (les autres restent intacts).
+    const fresh = await chrome.storage.local.get('activeImportTokens');
+    const updated = { ...(fresh.activeImportTokens || {}) };
+    delete updated[meta.source];
+    await chrome.storage.local.set({ activeImportTokens: updated });
   } catch (e) {
     console.error('[Star Gap] Échec import', e);
     const msg = e instanceof Error ? e.message : String(e);
@@ -185,17 +194,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return false;
   }
   if (msg?.type === 'sg_session_started') {
-    // Capture le tabId de l'onglet Ahrefs pour pouvoir le fermer après succès.
+    // Capture le tabId de l'onglet source pour pouvoir le fermer après succès.
     const tabId = sender.tab?.id;
-    chrome.storage.local.set({
-      activeImportToken: {
+    const source = msg.source || 'ahrefs';
+    // Storage keyé par source pour permettre plusieurs imports en parallèle
+    // sur des providers différents (ex : Ahrefs + Semrush en même temps).
+    chrome.storage.local.get('activeImportTokens', (data) => {
+      const tokens = data.activeImportTokens || {};
+      tokens[source] = {
         token: msg.token,
         domain: msg.domain,
+        source,
         tabId,
         startedAt: Date.now(),
-      },
+      };
+      chrome.storage.local.set({ activeImportTokens: tokens });
     });
-    console.log('[Star Gap] Session import enregistrée', { tabId, domain: msg.domain });
+    console.log('[Star Gap] Session import enregistrée', { source, tabId, domain: msg.domain });
     sendResponse({ ok: true });
     return false;
   }

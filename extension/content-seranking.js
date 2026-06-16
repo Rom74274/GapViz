@@ -34,6 +34,7 @@
 
       chrome.runtime.sendMessage({
         type: 'sg_session_started',
+        source: 'seranking',
         token,
         domain,
       });

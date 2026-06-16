@@ -31,6 +31,7 @@
 
       chrome.runtime.sendMessage({
         type: 'sg_session_started',
+        source: 'semrush',
         token,
         domain,
       });
