@@ -153,9 +153,8 @@ function seRankingCountryFrom(country: string | null | undefined): string {
   return country.trim().toLowerCase() || 'us';
 }
 
-// URL SE Ranking Competitive Research → Organic Keywords avec le token Star
-// Gap en param. SE Ranking change parfois ses paths : on cible le module
-// "competitor.html" qui est stable depuis plusieurs années.
+// URL SE Ranking Competitive Research avec le token Star Gap en param.
+// Format observé : ?input=<domain>&mode=base_domain&source=<country>&month=YYYY-M
 export function buildSeRankingImportUrl(
   domain: string,
   token: string,
@@ -163,10 +162,14 @@ export function buildSeRankingImportUrl(
 ): string {
   const d = encodeURIComponent(domain);
   const c = seRankingCountryFrom(country);
+  const now = new Date();
+  const month = `${now.getFullYear()}-${now.getMonth() + 1}`;
   return (
-    `https://online.seranking.com/research.competitor.html/organic/keywords/` +
-    `?domain=${d}` +
-    `&country=${c}` +
+    `https://online.seranking.com/research.competitor.html/` +
+    `?input=${d}` +
+    `&mode=base_domain` +
+    `&source=${c}` +
+    `&month=${month}` +
     `&starGapToken=${encodeURIComponent(token)}`
   );
 }

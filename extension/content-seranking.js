@@ -28,7 +28,8 @@
       const token = params.get('starGapToken');
       if (!token) return;
 
-      const target = params.get('domain') || '';
+      // SE Ranking utilise le param `input` pour le domaine (et non `domain`).
+      const target = params.get('input') || params.get('domain') || '';
       const domain = target.replace(/^www\./, '').replace(/\/$/, '');
 
       chrome.runtime.sendMessage({
