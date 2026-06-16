@@ -124,6 +124,97 @@ describe('parseAhrefsCsv (non-régression après split)', () => {
   });
 });
 
+describe('Edge cases parser (CSV mal formé / extrêmes)', () => {
+  it('CSV vide (0 bytes) → throw "trop court"', () => {
+    expect(() => parseSemrushCsv(csvToBuffer(''))).toThrow(/trop court/i);
+    expect(() => parseAhrefsCsv(csvToBuffer(''))).toThrow(/trop court/i);
+  });
+
+  it('CSV avec headers uniquement (pas de data row) → throw "trop court"', () => {
+    const csv = 'Keyword,Position,Search Volume,Keyword Difficulty,CPC,URL';
+    expect(() => parseSemrushCsv(csvToBuffer(csv))).toThrow(/trop court/i);
+  });
+
+  it('CSV où seul Keyword est présent (colonnes optionnelles manquantes)', () => {
+    const csv = ['Keyword', 'mon keyword', 'autre kw'].join('\n');
+    const rows = parseSemrushCsv(csvToBuffer(csv));
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toEqual({
+      keyword: 'mon keyword',
+      volume: null,
+      position: null,
+      kd: null,
+      cpc: null,
+      url: null,
+    });
+    expect(rows[1]?.keyword).toBe('autre kw');
+  });
+
+  it('garde les caractères Unicode (emoji, accents, CJK)', () => {
+    const csv = [
+      'Keyword,Position,Search Volume,Keyword Difficulty,CPC,URL',
+      'café ☕,3,1000,50,1.00,https://example.com',
+      '日本語,5,500,40,0.80,https://example.com',
+      'naïve🎯,7,200,30,0.50,https://example.com',
+    ].join('\n');
+    const rows = parseSemrushCsv(csvToBuffer(csv));
+    expect(rows[0]?.keyword).toBe('café ☕');
+    expect(rows[1]?.keyword).toBe('日本語');
+    expect(rows[2]?.keyword).toBe('naïve🎯');
+  });
+
+  it('gère un gros volume (10k rows synthétiques) sans crash ni perte', () => {
+    const lines = ['Keyword,Position,Search Volume,Keyword Difficulty,CPC,URL'];
+    for (let i = 0; i < 10000; i++) {
+      lines.push(`keyword-${i},${(i % 100) + 1},${1000 + i},${i % 100},1.50,https://example.com/p${i}`);
+    }
+    const rows = parseSemrushCsv(csvToBuffer(lines.join('\n')));
+    expect(rows).toHaveLength(10000);
+    expect(rows[0]?.keyword).toBe('keyword-0');
+    expect(rows[9999]?.keyword).toBe('keyword-9999');
+  });
+
+  it('tolère des champs quotés avec virgule à l\'intérieur (RFC 4180)', () => {
+    const csv = [
+      'Keyword,Position,Search Volume,Keyword Difficulty,CPC,URL,SERP Features',
+      'best tool,1,1000,50,1.00,https://example.com,"Sitelinks, FAQ, PAA"',
+      '"kw with ""quotes""",2,500,40,0.80,https://example.com,""',
+    ].join('\n');
+    const rows = parseSemrushCsv(csvToBuffer(csv));
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.keyword).toBe('best tool');
+    // Guillemets échappés (RFC 4180) : "" à l'intérieur d'un champ quoté → "
+    expect(rows[1]?.keyword).toBe('kw with "quotes"');
+  });
+
+  it("ignore les lignes vides au milieu / fin du fichier", () => {
+    const csv = [
+      'Keyword,Position,Search Volume,Keyword Difficulty,CPC,URL',
+      'first,1,1000,50,1.00,https://example.com',
+      '',
+      'second,2,500,40,0.80,https://example.com',
+      '',
+      '',
+    ].join('\n');
+    const rows = parseSemrushCsv(csvToBuffer(csv));
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.keyword).toBe('first');
+    expect(rows[1]?.keyword).toBe('second');
+  });
+
+  it('valeurs numériques avec préfixes monétaires ($, %) et espaces', () => {
+    const csv = [
+      'Keyword,Position,Search Volume,Keyword Difficulty,CPC,URL',
+      'test,3,"1 500",50,"$2.50",https://example.com',
+      'pct,5,"1 000",60%,"$1.00",https://example.com',
+    ].join('\n');
+    const rows = parseSemrushCsv(csvToBuffer(csv));
+    expect(rows[0]?.volume).toBe(1500);
+    expect(rows[0]?.cpc).toBe(2.5);
+    expect(rows[1]?.kd).toBe(60);
+  });
+});
+
 describe('parseSeRankingCsv', () => {
   it('parse un export SE Ranking Competitive Research au format US', () => {
     const csv = [
