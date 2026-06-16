@@ -15,7 +15,7 @@ export function PrivacyPage() {
       <h1 className="mt-4 text-2xl font-semibold tracking-tight">
         Politique de confidentialité
       </h1>
-      <p className="mt-1 text-xs text-text-muted">Dernière mise à jour : mai 2026</p>
+      <p className="mt-1 text-xs text-text-muted">Dernière mise à jour : juin 2026</p>
 
       <div className="mt-8 space-y-8 text-sm leading-relaxed text-text-secondary">
         <section>
@@ -206,6 +206,75 @@ export function PrivacyPage() {
             (HTTPS/TLS), authentification sécurisée (Supabase Auth), isolation
             des données par utilisateur (Row Level Security), et clés API
             stockées côté serveur (Edge Functions).
+          </p>
+        </section>
+
+        <section>
+          <h2 className="mb-2 text-base font-semibold text-text-primary">
+            9. Extension Chrome « Star Gap Importer »
+          </h2>
+          <p>
+            L'extension Chrome <strong>Star Gap Importer</strong> est un
+            composant optionnel qui automatise l'import de vos exports CSV
+            depuis Ahrefs, Semrush et SE Ranking dans votre projet Star Gap.
+            Elle ne fonctionne que sur les pages de ces trois sites et sur
+            l'application Star Gap.
+          </p>
+          <p className="mt-3 font-medium text-text-primary">
+            Données traitées par l'extension :
+          </p>
+          <ul className="mt-1 list-inside list-disc space-y-1">
+            <li>
+              <strong>Fichier CSV exporté manuellement</strong> par vous-même
+              depuis Ahrefs / Semrush / SE Ranking (mots-clés, positions,
+              volumes). Transmis chiffré en HTTPS à l'API Star Gap pour
+              traitement, puis stocké dans votre projet sur Supabase.
+            </li>
+            <li>
+              <strong>Token de session éphémère</strong> (UUID v4, durée de vie
+              10 minutes). Stocké uniquement dans <code className="rounded bg-bg-elevated px-1 py-0.5">chrome.storage.local</code>{' '}
+              (isolation par extension, inaccessible aux sites web). Sert
+              uniquement à relier l'export CSV au projet Star Gap de
+              l'utilisateur authentifié.
+            </li>
+          </ul>
+          <p className="mt-3 font-medium text-text-primary">
+            Ce que l'extension ne fait PAS :
+          </p>
+          <ul className="mt-1 list-inside list-disc space-y-1">
+            <li>Aucun suivi de navigation, aucune analyse comportementale</li>
+            <li>Aucune collecte sur d'autres sites que ceux listés ci-dessus</li>
+            <li>Aucune lecture de vos cookies en dehors du <em>refetch</em> ciblé du CSV que vous venez d'exporter</li>
+            <li>Aucune transmission à des tiers en dehors de Star Gap et son sous-traitant Supabase</li>
+          </ul>
+          <p className="mt-3 font-medium text-text-primary">
+            Permissions Chrome demandées :
+          </p>
+          <ul className="mt-1 list-inside list-disc space-y-1">
+            <li>
+              <code className="rounded bg-bg-elevated px-1 py-0.5">downloads</code> — intercepter le téléchargement du CSV
+            </li>
+            <li>
+              <code className="rounded bg-bg-elevated px-1 py-0.5">storage</code> — stocker le token de session éphémère
+            </li>
+            <li>
+              <code className="rounded bg-bg-elevated px-1 py-0.5">tabs</code> /{' '}
+              <code className="rounded bg-bg-elevated px-1 py-0.5">activeTab</code> — afficher le statut de connexion et fermer l'onglet après import
+            </li>
+            <li>
+              <code className="rounded bg-bg-elevated px-1 py-0.5">host_permissions</code> limitées à <code className="rounded bg-bg-elevated px-1 py-0.5">app.ahrefs.com</code>, <code className="rounded bg-bg-elevated px-1 py-0.5">*.semrush.com</code>, <code className="rounded bg-bg-elevated px-1 py-0.5">*.seranking.com</code> et l'API Star Gap
+            </li>
+          </ul>
+          <p className="mt-3">
+            Le code source de l'extension est consultable publiquement sur
+            GitHub : <a
+              href="https://github.com/Rom74274/GapViz/tree/main/extension"
+              target="_blank"
+              rel="noreferrer"
+              className="text-accent hover:text-accent-hover"
+            >
+              github.com/Rom74274/GapViz/tree/main/extension
+            </a>
           </p>
         </section>
       </div>

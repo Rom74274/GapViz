@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Star Gap Importer",
-  "version": "0.1.0",
-  "description": "Importe tes mots-clés Ahrefs directement dans Star Gap en 1 clic.",
+  "version": "1.0.0",
+  "description": "Importe tes mots-clés Ahrefs, Semrush et SE Ranking directement dans Star Gap en 1 clic.",
   "permissions": [
     "downloads",
     "storage",
