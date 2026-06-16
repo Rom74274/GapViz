@@ -153,8 +153,10 @@ function seRankingCountryFrom(country: string | null | undefined): string {
   return country.trim().toLowerCase() || 'us';
 }
 
-// URL SE Ranking Competitive Research avec le token Star Gap en param.
-// Format observé : ?input=<domain>&mode=base_domain&source=<country>&month=YYYY-M
+// URL SE Ranking Competitive Research → Google Search → Organic Keywords.
+// On atterrit direct sur la table des KWs (où se trouve le bouton Export)
+// plutôt que sur la page Overview — 1 clic économisé pour l'user.
+// Format observé : ?input=<domain>&mode=base_domain&source=<country>&brand=
 export function buildSeRankingImportUrl(
   domain: string,
   token: string,
@@ -162,14 +164,12 @@ export function buildSeRankingImportUrl(
 ): string {
   const d = encodeURIComponent(domain);
   const c = seRankingCountryFrom(country);
-  const now = new Date();
-  const month = `${now.getFullYear()}-${now.getMonth() + 1}`;
   return (
-    `https://online.seranking.com/research.competitor.html/` +
+    `https://online.seranking.com/research.competitor.html/google-search/organic/keywords/` +
     `?input=${d}` +
     `&mode=base_domain` +
     `&source=${c}` +
-    `&month=${month}` +
+    `&brand=` +
     `&starGapToken=${encodeURIComponent(token)}`
   );
 }
