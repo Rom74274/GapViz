@@ -16,9 +16,10 @@
   let lastError = null;
 
   function isOrganicKeywordsPage() {
-    return /research\.competitor\.html.*organic.*keywords/i.test(
-      window.location.pathname + window.location.search,
-    );
+    // SE Ranking change régulièrement ses sous-paths (overview, keywords,
+    // organic/keywords, …). On reste large : tout sous research.competitor.html
+    // active le banner.
+    return /research\.competitor\.html/i.test(window.location.pathname);
   }
 
   function captureTokenFromUrl() {
