@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { parseSemrushCsv } from '../../../../supabase/functions/extension-import/parsers/semrush.ts';
 import { parseAhrefsCsv } from '../../../../supabase/functions/extension-import/parsers/ahrefs.ts';
+import { parseSeRankingCsv } from '../../../../supabase/functions/extension-import/parsers/seranking.ts';
 
 // Convertit un string CSV en ArrayBuffer (UTF-8 sans BOM).
 function csvToBuffer(text: string): ArrayBuffer {
@@ -120,5 +121,49 @@ describe('parseAhrefsCsv (non-régression après split)', () => {
     expect(rows[0]?.keyword).toBe('seo tools');
     expect(rows[0]?.position).toBe(3);
     expect(rows[0]?.volume).toBe(50000);
+  });
+});
+
+describe('parseSeRankingCsv', () => {
+  it('parse un export SE Ranking Competitive Research au format US', () => {
+    const csv = [
+      'Keyword,Position,Search Volume,Difficulty,CPC,URL,Traffic,Competition',
+      'seo software,4,22000,68,3.80,https://example.com/seo,1200,0.72',
+      'rank tracker,9,8500,55,2.40,https://example.com/rank,420,0.61',
+      'competitor analysis,15,4200,48,1.90,https://example.com/comp,180,0.55',
+    ].join('\n');
+
+    const rows = parseSeRankingCsv(csvToBuffer(csv));
+
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toMatchObject({
+      keyword: 'seo software',
+      position: 4,
+      volume: 22000,
+      kd: 68,
+      cpc: 3.8,
+      url: 'https://example.com/seo',
+    });
+    expect(rows[2]?.position).toBe(15);
+  });
+
+  it("accepte 'DR' ou 'KD' comme alias de Difficulty (variantes SE Ranking)", () => {
+    const csv = [
+      'Keyword,Position,Search Volume,KD,CPC,URL',
+      'test,3,1000,42,1.50,https://example.com',
+    ].join('\n');
+    const rows = parseSeRankingCsv(csvToBuffer(csv));
+    expect(rows[0]?.kd).toBe(42);
+  });
+
+  it('clamp position et kd hors plages', () => {
+    const csv = [
+      'Keyword,Position,Search Volume,Difficulty,CPC,URL',
+      'bad pos,2000,100,50,1.00,https://example.com',
+      'bad kd,5,100,200,1.00,https://example.com',
+    ].join('\n');
+    const rows = parseSeRankingCsv(csvToBuffer(csv));
+    expect(rows[0]?.position).toBeNull();
+    expect(rows[1]?.kd).toBeNull();
   });
 });

@@ -12,6 +12,7 @@
   "host_permissions": [
     "*://app.ahrefs.com/*",
     "*://*.semrush.com/*",
+    "*://*.seranking.com/*",
     "*://kngkvaqovdnysmqrvxtj.functions.supabase.co/*"
   ],
   "background": {
@@ -27,6 +28,12 @@
     {
       "matches": ["*://*.semrush.com/*"],
       "js": ["content-semrush.js"],
+      "css": ["content-style.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://*.seranking.com/*"],
+      "js": ["content-seranking.js"],
       "css": ["content-style.css"],
       "run_at": "document_idle"
     },

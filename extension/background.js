@@ -11,6 +11,7 @@ const EXTENSION_IMPORT_URL =
 const IMPORT_SOURCES = [
   { id: 'ahrefs', urlMatch: 'ahrefs.com' },
   { id: 'semrush', urlMatch: 'semrush.com' },
+  { id: 'seranking', urlMatch: 'seranking.com' },
 ];
 
 function detectSourceFromDownload(item) {
@@ -162,7 +163,7 @@ async function sendStatusToActiveTab(status, extra = {}) {
   try {
     const tabs = await chrome.tabs.query({
       active: true,
-      url: ['*://app.ahrefs.com/*', '*://*.semrush.com/*'],
+      url: ['*://app.ahrefs.com/*', '*://*.semrush.com/*', '*://*.seranking.com/*'],
     });
     for (const tab of tabs) {
       if (tab?.id) {

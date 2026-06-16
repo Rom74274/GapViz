@@ -87,11 +87,12 @@ export async function cancelImportSession(token: string): Promise<void> {
 // dans buildImportUrl + un parser côté Edge Function.
 // ---------------------------------------------------------------------------
 
-export type ImportSource = 'ahrefs' | 'semrush';
+export type ImportSource = 'ahrefs' | 'semrush' | 'seranking';
 
 export const IMPORT_SOURCES: { value: ImportSource; label: string }[] = [
   { value: 'ahrefs', label: 'Ahrefs' },
   { value: 'semrush', label: 'Semrush' },
+  { value: 'seranking', label: 'SE Ranking' },
 ];
 
 export function buildImportUrl(
@@ -101,6 +102,7 @@ export function buildImportUrl(
   country?: string | null,
 ): string {
   if (source === 'semrush') return buildSemrushImportUrl(domain, token, country);
+  if (source === 'seranking') return buildSeRankingImportUrl(domain, token, country);
   return buildAhrefsImportUrl(domain, token);
 }
 
@@ -141,6 +143,30 @@ export function buildSemrushImportUrl(
     `?db=${db}` +
     `&q=${q}` +
     `&searchType=domain` +
+    `&starGapToken=${encodeURIComponent(token)}`
+  );
+}
+
+// SE Ranking accepte les codes ISO-2 lowercase (us, fr, de, gb, …).
+function seRankingCountryFrom(country: string | null | undefined): string {
+  if (!country) return 'us';
+  return country.trim().toLowerCase() || 'us';
+}
+
+// URL SE Ranking Competitive Research → Organic Keywords avec le token Star
+// Gap en param. SE Ranking change parfois ses paths : on cible le module
+// "competitor.html" qui est stable depuis plusieurs années.
+export function buildSeRankingImportUrl(
+  domain: string,
+  token: string,
+  country?: string | null,
+): string {
+  const d = encodeURIComponent(domain);
+  const c = seRankingCountryFrom(country);
+  return (
+    `https://online.seranking.com/research.competitor.html/organic/keywords/` +
+    `?domain=${d}` +
+    `&country=${c}` +
     `&starGapToken=${encodeURIComponent(token)}`
   );
 }

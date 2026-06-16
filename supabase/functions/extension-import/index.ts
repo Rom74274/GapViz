@@ -19,11 +19,22 @@ import { corsHeaders } from '../_shared/cors.ts';
 import { type ParsedRow } from './parsers/_shared.ts';
 import { parseAhrefsCsv } from './parsers/ahrefs.ts';
 import { parseSemrushCsv } from './parsers/semrush.ts';
+import { parseSeRankingCsv } from './parsers/seranking.ts';
 
-type ImportSource = 'ahrefs' | 'semrush';
+type ImportSource = 'ahrefs' | 'semrush' | 'seranking';
+
+const VALID_SOURCES: readonly ImportSource[] = ['ahrefs', 'semrush', 'seranking'];
+
+function normalizeSource(value: unknown): ImportSource {
+  if (typeof value === 'string' && (VALID_SOURCES as readonly string[]).includes(value)) {
+    return value as ImportSource;
+  }
+  return 'ahrefs';
+}
 
 function parseCsvForSource(source: ImportSource, buffer: ArrayBuffer): ParsedRow[] {
   if (source === 'semrush') return parseSemrushCsv(buffer);
+  if (source === 'seranking') return parseSeRankingCsv(buffer);
   return parseAhrefsCsv(buffer);
 }
 
@@ -47,9 +58,7 @@ Deno.serve(async (req) => {
       const form = await req.formData();
       token = (form.get('token') || '').toString();
       providedDomain = (form.get('domain') || '').toString();
-      source = ((form.get('source') || 'ahrefs').toString() === 'semrush'
-        ? 'semrush'
-        : 'ahrefs') as ImportSource;
+      source = normalizeSource((form.get('source') || 'ahrefs').toString());
       const csvFile = form.get('csv') as File | null;
       if (csvFile) csvBuffer = await csvFile.arrayBuffer();
     } else if (contentType.includes('application/json')) {
@@ -57,7 +66,7 @@ Deno.serve(async (req) => {
       const body = await req.json();
       token = body.token || '';
       providedDomain = body.domain || '';
-      source = (body.source === 'semrush' ? 'semrush' : 'ahrefs') as ImportSource;
+      source = normalizeSource(body.source);
       if (body.csv_base64) {
         csvBuffer = base64ToArrayBuffer(body.csv_base64);
       }
