@@ -57,6 +57,9 @@ export function AddSiteFromExport({ projectId, open, onClose, onImportComplete }
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [color, setColor] = useState<string>(PALETTE[0]!);
+  const [importStats, setImportStats] = useState<
+    { keywordCount: number; domain: string } | null
+  >(null);
   const pollAbortRef = useRef(false);
   const { installed: extensionInstalled } = useExtensionInstalled();
 
@@ -85,6 +88,7 @@ export function AddSiteFromExport({ projectId, open, onClose, onImportComplete }
       setStatus('idle');
       setError(null);
       setStarting(false);
+      setImportStats(null);
     }
   }, [open]);
 
@@ -125,12 +129,19 @@ export function AddSiteFromExport({ projectId, open, onClose, onImportComplete }
           }
           // Re-fetch + sync Dexie pour que la page projet voie le nouveau site.
           const detail = await fetchProjectDetailFromSupabase(projectId);
-          if (detail.ok) await syncProjectToDexie(detail.data);
+          if (detail.ok) {
+            await syncProjectToDexie(detail.data);
+            // Compte les KWs liés au domaine importé pour récompenser l'user.
+            const keywordCount = detail.data.keywords.filter(
+              (k) => k.sourceDomain === targetDomain,
+            ).length;
+            setImportStats({ keywordCount, domain: targetDomain });
+          }
           onImportComplete?.();
-          // Auto-close 1.5s après succès.
+          // Auto-close 3s après succès (laisse le temps de lire les stats).
           setTimeout(() => {
             if (!pollAbortRef.current) onClose();
-          }, 1500);
+          }, 3000);
           return true;
         }
         if (session.status === 'failed') {
@@ -358,11 +369,22 @@ export function AddSiteFromExport({ projectId, open, onClose, onImportComplete }
         )}
 
         {status === 'completed' && (
-          <div className="mt-5 rounded-md border border-green-400/40 bg-green-400/5 p-3 text-xs">
-            <p className="flex items-center gap-2 font-medium text-green-300">
-              <Sparkles size={12} />
+          <div className="mt-5 rounded-md border border-green-400/40 bg-green-400/5 p-3">
+            <p className="flex items-center gap-2 text-sm font-medium text-green-300">
+              <Sparkles size={14} />
               Site ajouté avec succès !
             </p>
+            {importStats && (
+              <p className="mt-1.5 text-xs text-text-secondary">
+                <strong className="text-text-primary">
+                  {importStats.keywordCount.toLocaleString('fr-FR')}
+                </strong>{' '}
+                mot{importStats.keywordCount > 1 ? 's' : ''}-clé
+                {importStats.keywordCount > 1 ? 's' : ''} importé
+                {importStats.keywordCount > 1 ? 's' : ''} pour{' '}
+                <strong className="text-text-primary">{importStats.domain}</strong>.
+              </p>
+            )}
           </div>
         )}
 

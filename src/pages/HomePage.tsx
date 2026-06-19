@@ -11,10 +11,14 @@ import {
   Users,
   Cloud,
   HardDrive,
+  Puzzle,
+  Check,
+  ExternalLink,
 } from 'lucide-react';
 import { db, type Keyword, type Project } from '@/lib/db';
 import { useSupabaseProjects, purgeProjectFromDexie } from '@/lib/dataLayer';
 import { supabase } from '@/lib/supabase';
+import { EXTENSION_INSTALL_URL, useExtensionInstalled } from '@/lib/extensionInstall';
 import { cn } from '@/lib/utils';
 
 interface ProjectStat {
@@ -122,6 +126,8 @@ export function HomePage() {
     ? Object.values(stats).reduce((s, x) => s + x.gapCount, 0)
     : 0;
 
+  const { installed: extensionInstalled } = useExtensionInstalled();
+
   return (
     <div className="mx-auto max-w-6xl px-6 py-10">
       <header className="flex flex-wrap items-start justify-between gap-4">
@@ -143,20 +149,15 @@ export function HomePage() {
         </Link>
       </header>
 
+      {projectCount > 0 && !extensionInstalled && (
+        <ExtensionBanner />
+      )}
+
       <section className="mt-8">
         {localProjects === undefined || remoteLoading ? (
           <EmptyState>Chargement…</EmptyState>
         ) : projects.length === 0 ? (
-          <EmptyState icon={<FolderKanban size={36} className="text-text-muted" />}>
-            <p className="text-text-secondary">Aucun projet pour l'instant.</p>
-            <Link
-              to="/projects/new"
-              className="mt-4 inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover"
-            >
-              <Plus size={16} />
-              Créer mon premier projet
-            </Link>
-          </EmptyState>
+          <FirstTimeEmptyState extensionInstalled={extensionInstalled} />
         ) : (
           <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {projects.map((p) => (
@@ -329,6 +330,85 @@ function EmptyState({
     <div className="rounded-xl border border-dashed border-border-subtle bg-bg-surface/30 p-12 text-center">
       {icon && <div className="mb-3 flex justify-center">{icon}</div>}
       {children}
+    </div>
+  );
+}
+
+function FirstTimeEmptyState({ extensionInstalled }: { extensionInstalled: boolean }) {
+  return (
+    <div className="rounded-xl border border-dashed border-border-subtle bg-bg-surface/30 p-12 text-center">
+      <div className="mb-4 flex justify-center">
+        <FolderKanban size={36} className="text-text-muted" />
+      </div>
+      <h2 className="text-lg font-semibold tracking-tight">
+        Aucun projet pour l'instant
+      </h2>
+      <p className="mx-auto mt-2 max-w-md text-sm text-text-secondary">
+        Crée ton premier projet SEO pour visualiser tes gaps concurrentiels.
+        Tu pourras importer tes mots-clés depuis Ahrefs, Semrush ou SE Ranking
+        en 1 clic.
+      </p>
+
+      <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+        <Link
+          to="/projects/new"
+          className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover"
+        >
+          <Plus size={16} />
+          Créer mon premier projet
+        </Link>
+      </div>
+
+      <div className="mt-6 inline-flex items-center gap-2 rounded-md border border-border-subtle bg-bg-surface/60 px-3 py-1.5 text-xs">
+        {extensionInstalled ? (
+          <>
+            <Check size={12} className="text-green-400" />
+            <span className="text-text-secondary">
+              Extension Star Gap détectée — prête pour l'import
+            </span>
+          </>
+        ) : (
+          <>
+            <Puzzle size={12} className="text-accent" />
+            <span className="text-text-secondary">
+              Pense à{' '}
+              <a
+                href={EXTENSION_INSTALL_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="text-accent hover:text-accent-hover"
+              >
+                installer l'extension Chrome
+              </a>{' '}
+              pour automatiser l'import
+            </span>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ExtensionBanner() {
+  return (
+    <div className="mt-6 flex flex-wrap items-center gap-3 rounded-md border border-accent/30 bg-accent/5 px-4 py-3 text-xs">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent">
+        <Puzzle size={13} />
+      </span>
+      <p className="min-w-0 flex-1 text-text-secondary">
+        <strong className="text-text-primary">Extension Chrome non détectée.</strong>{' '}
+        Installe-la pour importer tes mots-clés depuis Ahrefs, Semrush ou
+        SE Ranking en 1 clic, au lieu d'exporter / importer manuellement.
+      </p>
+      <a
+        href={EXTENSION_INSTALL_URL}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent/10 px-3 py-1.5 text-[11px] font-medium text-accent hover:bg-accent/20"
+      >
+        <ExternalLink size={11} />
+        Installer
+      </a>
     </div>
   );
 }
