@@ -44,7 +44,7 @@ export function Popover({
       {open && (
         <div
           className={cn(
-            'absolute top-full z-30 mt-1.5 min-w-[260px] rounded-lg border border-border-subtle bg-bg-surface/95 p-3 shadow-2xl backdrop-blur',
+            'glass-strong absolute top-full z-30 mt-1.5 min-w-[260px] rounded-xl p-3',
             align === 'right' ? 'right-0' : 'left-0',
             className,
           )}

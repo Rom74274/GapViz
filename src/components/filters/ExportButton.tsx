@@ -57,10 +57,10 @@ export function ExportButton({ visibleKws, projectName, filters, selectedIds }: 
             onClick={() => setOpen((v) => !v)}
             disabled={disabled}
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+              'glass-pill inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium',
               disabled
-                ? 'cursor-not-allowed border-border-subtle bg-bg-base/40 text-text-muted opacity-50'
-                : 'border-border-subtle bg-bg-base/40 text-text-secondary hover:border-border-strong hover:text-text-primary',
+                ? 'cursor-not-allowed text-text-muted opacity-50'
+                : 'text-text-secondary hover:text-text-primary',
             )}
           >
             <Download size={12} />

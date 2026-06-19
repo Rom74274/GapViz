@@ -89,7 +89,7 @@ export function FilterBar({
   const visiblePct = totalKwCount > 0 ? (visibleKwCount / totalKwCount) * 100 : 0;
 
   return (
-    <div className="relative z-20 border-b border-border-subtle bg-bg-surface/30 px-4 py-2.5 backdrop-blur-md">
+    <div className="glass-toolbar relative z-20 px-4 py-2.5">
       <div className="flex flex-wrap items-center gap-2">
         {/* PRIMARY FILTERS */}
         <ConcurrentFilter
@@ -244,10 +244,9 @@ function FilterButton({
       type="button"
       onClick={onClick}
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-all',
-        active
-          ? 'border-accent/40 bg-accent/10 text-accent shadow-[inset_0_0_0_1px_rgba(99,102,241,0.15)]'
-          : 'border-border-subtle/60 bg-bg-base/30 text-text-secondary backdrop-blur hover:border-border-strong/60 hover:bg-bg-elevated/50 hover:text-text-primary',
+        'glass-pill inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium',
+        active && 'glass-pill-active text-accent',
+        !active && 'text-text-secondary hover:text-text-primary',
       )}
     >
       <span className={cn('shrink-0', active ? 'text-accent' : 'text-text-muted')}>
@@ -255,7 +254,7 @@ function FilterButton({
       </span>
       <span>{children}</span>
       {active && activeValue && (
-        <span className="ml-0.5 rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-accent">
+        <span className="ml-0.5 rounded bg-accent/25 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-accent">
           {activeValue}
         </span>
       )}
@@ -287,10 +286,9 @@ function SmallToggle({
       onClick={onClick}
       title={title}
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] transition-all',
-        active
-          ? 'border-accent/40 bg-accent/10 text-accent'
-          : 'border-border-subtle/40 bg-transparent text-text-muted hover:border-border-strong/50 hover:text-text-secondary',
+        'glass-pill inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px]',
+        active && 'glass-pill-active text-accent',
+        !active && 'text-text-muted hover:text-text-secondary',
       )}
     >
       <span className="shrink-0">{icon}</span>
