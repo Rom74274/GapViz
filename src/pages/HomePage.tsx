@@ -19,6 +19,7 @@ import { db, type Keyword, type Project } from '@/lib/db';
 import { useSupabaseProjects, purgeProjectFromDexie } from '@/lib/dataLayer';
 import { supabase } from '@/lib/supabase';
 import { EXTENSION_INSTALL_URL, useExtensionInstalled } from '@/lib/extensionInstall';
+import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/utils';
 
 interface ProjectStat {
@@ -133,74 +134,125 @@ export function HomePage() {
     expectedVersion: extensionExpectedVersion,
   } = useExtensionInstalled();
 
+  const { user, profile } = useAuth();
+  const firstName =
+    (profile as { display_name?: string } | null)?.display_name ||
+    user?.email?.split('@')[0] ||
+    '';
+
   return (
-    <div className="mx-auto max-w-6xl px-6 py-10">
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Tes projets SEO</h1>
-          <p className="mt-2 max-w-xl text-sm text-text-secondary">
-            {projectCount === 0
-              ? 'Crée ton premier projet pour commencer à explorer tes gaps SEO.'
-              : 'Sélectionne un projet pour ouvrir le graph, ou crée-en un nouveau.'}
-          </p>
-        </div>
-        <Link
-          to="/projects/new"
-          data-tour-id="tour-new-project-btn"
-          className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-accent/20 transition-colors hover:bg-accent-hover"
-        >
-          <Plus size={16} />
-          Nouveau projet
-        </Link>
-      </header>
+    <div className="page-ambient min-h-full">
+      <div className="mx-auto max-w-6xl px-8 py-10">
+        {/* Header welcome */}
+        <header className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-semibold tracking-tight">
+              {firstName ? (
+                <>
+                  Welcome back {firstName}{' '}
+                  <span className="inline-block">👋</span>
+                </>
+              ) : (
+                <>Tes projets SEO</>
+              )}
+            </h1>
+            <p className="mt-2 max-w-xl text-sm text-text-secondary">
+              {projectCount === 0
+                ? 'Crée ton premier projet pour commencer à explorer tes gaps SEO.'
+                : 'Pilote tes analyses de gap concurrentiel et lance le clustering IA en 1 clic.'}
+            </p>
+          </div>
+          <Link
+            to="/projects/new"
+            data-tour-id="tour-new-project-btn"
+            className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-accent/30 transition-all hover:bg-accent-hover hover:shadow-accent/50"
+          >
+            <Plus size={16} />
+            Nouveau projet
+          </Link>
+        </header>
 
-      {projectCount > 0 && !extensionInstalled && <ExtensionBanner />}
-      {projectCount > 0 && extensionInstalled && extensionNeedsUpdate && (
-        <ExtensionUpdateBanner
-          currentVersion={extensionVersion!}
-          expectedVersion={extensionExpectedVersion}
-        />
-      )}
-
-      <section className="mt-8">
-        {localProjects === undefined || remoteLoading ? (
-          <EmptyState>Chargement…</EmptyState>
-        ) : projects.length === 0 ? (
-          <FirstTimeEmptyState extensionInstalled={extensionInstalled} />
-        ) : (
-          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {projects.map((p) => (
-              <ProjectCard
-                key={p.id}
-                projectId={p.id}
-                name={p.name}
-                domain={p.myDomain}
-                country={p.country}
-                stat={stats?.[p.id]}
-                source={projectSources.get(p.id) ?? 'local'}
-                onDelete={() => onDelete(p.id, p.name)}
-              />
-            ))}
-          </ul>
+        {/* Stats cards */}
+        {projectCount > 0 && (
+          <div className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <StatCard
+              icon={<FolderKanban size={14} />}
+              label="Projets"
+              value={projectCount.toLocaleString('fr-FR')}
+            />
+            <StatCard
+              icon={<TrendingUp size={14} />}
+              label="Mots-clés tracés"
+              value={totalKws.toLocaleString('fr-FR')}
+            />
+            <StatCard
+              icon={<AlertTriangle size={14} className="text-amber-400" />}
+              label="Gaps détectés"
+              value={totalGaps.toLocaleString('fr-FR')}
+            />
+          </div>
         )}
-      </section>
 
-      {projects && projects.length > 1 && stats && (
-        <footer className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-border-subtle pt-4 text-xs text-text-secondary">
-          <Summary
-            icon={<FolderKanban size={12} />}
-            label={`${projectCount} projets`}
+        {/* Banners extension (glass-styled) */}
+        {projectCount > 0 && !extensionInstalled && <ExtensionBanner />}
+        {projectCount > 0 && extensionInstalled && extensionNeedsUpdate && (
+          <ExtensionUpdateBanner
+            currentVersion={extensionVersion!}
+            expectedVersion={extensionExpectedVersion}
           />
-          <Summary
-            icon={<TrendingUp size={12} />}
-            label={`${totalKws.toLocaleString('fr-FR')} KWs uniques`}
-          />
-          <Summary
-            icon={<AlertTriangle size={12} className="text-amber-400" />}
-            label={`${totalGaps.toLocaleString('fr-FR')} gaps identifiés`}
-          />
-        </footer>
-      )}
+        )}
+
+        {/* Projets */}
+        <section className="mt-8">
+          {projectCount > 0 && (
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-text-muted">
+              Mes projets
+            </h2>
+          )}
+          {localProjects === undefined || remoteLoading ? (
+            <EmptyState>Chargement…</EmptyState>
+          ) : projects.length === 0 ? (
+            <FirstTimeEmptyState extensionInstalled={extensionInstalled} />
+          ) : (
+            <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {projects.map((p) => (
+                <ProjectCard
+                  key={p.id}
+                  projectId={p.id}
+                  name={p.name}
+                  domain={p.myDomain}
+                  country={p.country}
+                  stat={stats?.[p.id]}
+                  source={projectSources.get(p.id) ?? 'local'}
+                  onDelete={() => onDelete(p.id, p.name)}
+                />
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function StatCard({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="glass-card glass-edge relative overflow-hidden rounded-xl p-4">
+      <div className="flex items-center gap-1.5 text-text-muted">
+        {icon}
+        <span className="text-[10px] uppercase tracking-wider">{label}</span>
+      </div>
+      <p className="mt-2 font-mono text-2xl font-semibold tracking-tight text-text-primary">
+        {value}
+      </p>
     </div>
   );
 }
@@ -230,7 +282,7 @@ function ProjectCard({
     <li className="group relative">
       <Link
         to={`/projects/${projectId}`}
-        className="block rounded-xl border border-border-subtle bg-bg-surface/85 p-5 backdrop-blur transition-all hover:border-accent/40 hover:bg-bg-surface hover:shadow-xl hover:shadow-accent/5"
+        className="glass-card glass-edge block overflow-hidden rounded-xl p-5 transition-all hover:bg-white/[0.08] hover:shadow-xl hover:shadow-accent/10"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -345,7 +397,7 @@ function EmptyState({
 
 function FirstTimeEmptyState({ extensionInstalled }: { extensionInstalled: boolean }) {
   return (
-    <div className="rounded-xl border border-dashed border-border-subtle bg-bg-surface/30 p-12 text-center">
+    <div className="glass-card glass-edge relative overflow-hidden rounded-xl p-12 text-center">
       <div className="mb-4 flex justify-center">
         <FolderKanban size={36} className="text-text-muted" />
       </div>
@@ -400,7 +452,7 @@ function FirstTimeEmptyState({ extensionInstalled }: { extensionInstalled: boole
 
 function ExtensionBanner() {
   return (
-    <div className="mt-6 flex flex-wrap items-center gap-3 rounded-md border border-accent/30 bg-accent/5 px-4 py-3 text-xs">
+    <div className="glass-card mt-6 flex flex-wrap items-center gap-3 rounded-xl border-accent/30 px-4 py-3 text-xs">
       <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent">
         <Puzzle size={13} />
       </span>
@@ -430,7 +482,7 @@ function ExtensionUpdateBanner({
   expectedVersion: string;
 }) {
   return (
-    <div className="mt-6 flex flex-wrap items-center gap-3 rounded-md border border-orange-400/40 bg-orange-400/5 px-4 py-3 text-xs">
+    <div className="glass-card mt-6 flex flex-wrap items-center gap-3 rounded-xl border-orange-400/40 px-4 py-3 text-xs">
       <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-orange-400/15 text-orange-300">
         <AlertTriangle size={13} />
       </span>
@@ -455,15 +507,6 @@ function ExtensionUpdateBanner({
         Voir
       </a>
     </div>
-  );
-}
-
-function Summary({ icon, label }: { icon: React.ReactNode; label: string }) {
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <span className="text-text-muted">{icon}</span>
-      <span>{label}</span>
-    </span>
   );
 }
 
