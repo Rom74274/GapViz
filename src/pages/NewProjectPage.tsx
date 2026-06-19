@@ -313,7 +313,7 @@ export function NewProjectPage() {
         </div>
       )}
 
-      <section className="glass-card glass-edge relative overflow-hidden rounded-2xl p-6">
+      <section className="glass-card glass-edge relative rounded-2xl p-6">
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-text-muted">
           Informations
         </h2>
@@ -473,7 +473,7 @@ export function NewProjectPage() {
       </section>
 
       <section
-        className="glass-card glass-edge relative mt-6 overflow-hidden rounded-2xl p-6"
+        className="glass-card glass-edge relative mt-6 rounded-2xl p-6"
         data-tour-id="tour-my-site"
       >
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-text-muted">
@@ -486,7 +486,7 @@ export function NewProjectPage() {
         />
       </section>
 
-      <section className="glass-card glass-edge relative mt-6 overflow-hidden rounded-2xl p-6">
+      <section className="glass-card glass-edge relative mt-6 rounded-2xl p-6">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-text-muted">
             Concurrents{' '}
