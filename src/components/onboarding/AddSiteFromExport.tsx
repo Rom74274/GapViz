@@ -27,6 +27,7 @@ import {
   EXTENSION_INSTALL_URL,
   useExtensionInstalled,
 } from '@/lib/extensionInstall';
+import { SourceIcon } from '@/components/SourceIcon';
 import { cn } from '@/lib/utils';
 
 // ---------------------------------------------------------------------------
@@ -281,22 +282,33 @@ export function AddSiteFromExport({ projectId, open, onClose, onImportComplete }
               <span className="mb-1.5 block text-xs text-text-secondary">
                 Source
               </span>
-              <div className="inline-flex rounded-md border border-border-subtle p-0.5">
-                {IMPORT_SOURCES.map((s) => (
-                  <button
-                    key={s.value}
-                    type="button"
-                    onClick={() => setSource(s.value)}
-                    className={cn(
-                      'rounded-sm px-3 py-1 text-xs transition-colors',
-                      source === s.value
-                        ? 'bg-bg-elevated text-text-primary'
-                        : 'text-text-muted hover:text-text-primary',
-                    )}
-                  >
-                    {s.label}
-                  </button>
-                ))}
+              <div className="grid grid-cols-3 gap-2">
+                {IMPORT_SOURCES.map((s) => {
+                  const active = source === s.value;
+                  return (
+                    <button
+                      key={s.value}
+                      type="button"
+                      onClick={() => setSource(s.value)}
+                      className={cn(
+                        'flex items-center gap-2 rounded-lg border p-2 text-left transition-all',
+                        active
+                          ? 'border-accent/60 bg-accent/10 shadow-md shadow-accent/20'
+                          : 'border-white/10 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.06]',
+                      )}
+                    >
+                      <SourceIcon source={s.value} size={22} />
+                      <span
+                        className={cn(
+                          'text-xs font-medium',
+                          active ? 'text-text-primary' : 'text-text-secondary',
+                        )}
+                      >
+                        {s.label}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
             <label className="block">

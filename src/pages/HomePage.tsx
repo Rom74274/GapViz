@@ -142,30 +142,31 @@ export function HomePage() {
 
   return (
     <div className="page-ambient min-h-full">
-      <div className="mx-auto max-w-6xl px-8 py-10">
-        {/* Header welcome */}
-        <header className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-semibold tracking-tight">
-              {firstName ? (
-                <>
-                  Welcome back {firstName}{' '}
-                  <span className="inline-block">👋</span>
-                </>
-              ) : (
-                <>Tes projets SEO</>
-              )}
-            </h1>
-            <p className="mt-2 max-w-xl text-sm text-text-secondary">
-              {projectCount === 0
-                ? 'Crée ton premier projet pour commencer à explorer tes gaps SEO.'
-                : 'Pilote tes analyses de gap concurrentiel et lance le clustering IA en 1 clic.'}
-            </p>
-          </div>
+      <div className="mx-auto max-w-6xl px-8 py-12">
+        {/* Header welcome — centré, mode hero */}
+        <header className="flex flex-col items-center text-center">
+          <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
+            {firstName ? (
+              <>
+                Welcome back{' '}
+                <span className="bg-gradient-to-r from-accent to-purple-300 bg-clip-text text-transparent">
+                  {firstName}
+                </span>{' '}
+                <span className="inline-block">👋</span>
+              </>
+            ) : (
+              <>Tes projets SEO</>
+            )}
+          </h1>
+          <p className="mt-3 max-w-xl text-sm text-text-secondary sm:text-base">
+            {projectCount === 0
+              ? 'Crée ton premier projet pour commencer à explorer tes gaps SEO.'
+              : 'Pilote tes analyses de gap concurrentiel et lance le clustering IA en 1 clic.'}
+          </p>
           <Link
             to="/projects/new"
             data-tour-id="tour-new-project-btn"
-            className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-accent/30 transition-all hover:bg-accent-hover hover:shadow-accent/50"
+            className="btn-primary-glow mt-6 inline-flex items-center gap-2 rounded-full px-6 py-3 text-sm font-medium text-white"
           >
             <Plus size={16} />
             Nouveau projet

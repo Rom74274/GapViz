@@ -14,6 +14,7 @@ import {
   type CreateProjectProgress,
 } from '@/lib/dataLayer';
 import { useAuth } from '@/hooks/useAuth';
+import { SourceIcon } from '@/components/SourceIcon';
 import {
   checkMaxProjects,
   checkMaxKeywords,
@@ -280,13 +281,17 @@ export function NewProjectPage() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-10">
-      <header className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight">Nouveau projet</h1>
-        <p className="mt-1 text-sm text-text-secondary">
-          Définis ton site, ajoute tes concurrents, importe les CSVs. L'analyse est lancée à la fin.
-        </p>
-      </header>
+    <div className="page-ambient min-h-full">
+      <div className="mx-auto max-w-4xl px-8 py-12">
+        <header className="mb-10 text-center">
+          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+            Nouveau projet
+          </h1>
+          <p className="mx-auto mt-3 max-w-lg text-sm text-text-secondary">
+            Définis ton site, ajoute tes concurrents, importe les CSVs. L'analyse
+            est lancée à la fin.
+          </p>
+        </header>
 
       {atProjectLimit && projectLimitCheck && (
         <div className="mb-6 flex items-start gap-3 rounded-lg border border-amber-400/40 bg-amber-400/10 p-4 text-sm">
@@ -308,8 +313,10 @@ export function NewProjectPage() {
         </div>
       )}
 
-      <section className="rounded-lg border border-border-subtle bg-bg-surface p-5">
-        <h2 className="mb-4 text-sm font-semibold">Informations</h2>
+      <section className="glass-card glass-edge relative overflow-hidden rounded-2xl p-6">
+        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-text-muted">
+          Informations
+        </h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div className="sm:col-span-3" data-tour-id="tour-name-input">
             <label className="block">
@@ -349,101 +356,129 @@ export function NewProjectPage() {
         </div>
       </section>
 
-      {/* Import via extension Chrome (Ahrefs / Semrush) */}
-      <section className="mt-6" data-tour-id="tour-import">
-        <div className="rounded-lg border border-accent/30 bg-accent/[0.04] p-4">
-          <div className="flex items-start gap-3">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent">
-              <Zap size={16} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <h3 className="text-sm font-semibold">
-                Importer depuis Ahrefs ou Semrush{' '}
-                <span className="ml-1 rounded-full bg-accent/15 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-accent">
-                  Extension
-                </span>
+      {/* Import via extension Chrome (Ahrefs / Semrush / SE Ranking)
+          — section mise en avant avec glow accent */}
+      <section
+        className="glass-card glow-accent glass-edge relative mt-6 overflow-hidden rounded-2xl p-6"
+        data-tour-id="tour-import"
+      >
+        <div className="flex items-start gap-4">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-accent/20 text-accent shadow-lg shadow-accent/20">
+            <Zap size={20} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <h3 className="text-base font-semibold">
+                Importer en 1 clic depuis ton outil SEO
               </h3>
-              <p className="mt-1 text-xs text-text-secondary">
-                Au lieu d'exporter manuellement le CSV, ouvre Ahrefs ou Semrush et
-                l'extension Star Gap envoie tes mots-clés directement dans ton projet.
-                Renseigne d'abord ton domaine principal ci-dessus.
-              </p>
-              <div className="mt-3 inline-flex rounded-md border border-border-subtle bg-bg-surface p-0.5">
-                {IMPORT_SOURCES.map((s) => (
-                  <button
-                    key={s.value}
-                    type="button"
-                    onClick={() => setImportSource(s.value)}
-                    className={
-                      'rounded-sm px-3 py-1 text-xs transition-colors ' +
-                      (importSource === s.value
-                        ? 'bg-bg-elevated text-text-primary'
-                        : 'text-text-muted hover:text-text-primary')
-                    }
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-              {importToken && importStatus === 'waiting' && (
-                <div className="mt-3 rounded-md border border-accent/30 bg-bg-surface p-3 text-xs">
-                  <p className="flex items-center gap-2 font-medium text-accent">
-                    <Loader2 size={12} className="animate-spin" />
-                    En attente du clic Export sur{' '}
-                    {IMPORT_SOURCES.find((s) => s.value === importSource)?.label}…
-                  </p>
-                  <p className="mt-1 text-text-secondary">
-                    Connecte-toi si besoin, puis clique sur{' '}
-                    <strong className="text-text-primary">Export → CSV</strong> au-dessus
-                    de la table. L'extension détecte le téléchargement et envoie tes
-                    mots-clés vers Star Gap.
-                  </p>
-                </div>
-              )}
-              {importStatus === 'completed' && (
-                <div className="mt-3 rounded-md border border-green-400/40 bg-green-400/5 p-3 text-xs">
-                  <p className="flex items-center gap-2 font-medium text-green-300">
-                    <Sparkles size={12} />
-                    Import réussi ! Redirection vers ton projet…
-                  </p>
-                </div>
-              )}
-              {(importStatus === 'failed' || importStatus === 'expired') && importError && (
-                <div className="mt-3 rounded-md border border-red-400/40 bg-red-400/5 p-3 text-xs">
-                  <p className="flex items-center gap-2 font-medium text-red-300">
-                    <AlertTriangle size={12} />
-                    {importError}
-                  </p>
-                </div>
-              )}
-              {importError && importStatus === 'idle' && (
-                <p className="mt-2 flex items-center gap-1.5 text-xs text-red-300">
-                  <AlertTriangle size={11} />
-                  {importError}
-                </p>
-              )}
+              <span className="rounded-full bg-accent/20 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-accent">
+                Extension
+              </span>
             </div>
-            <button
-              type="button"
-              onClick={startImport}
-              disabled={importStarting || !myDomain.trim()}
-              className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-2 text-xs font-medium text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {importStarting ? (
-                <Loader2 size={12} className="animate-spin" />
-              ) : (
-                <ExternalLink size={12} />
-              )}
-              {importToken
-                ? 'Relancer'
-                : `Ouvrir ${IMPORT_SOURCES.find((s) => s.value === importSource)?.label}`}
-            </button>
+            <p className="mt-1.5 text-xs text-text-secondary">
+              Au lieu d'exporter manuellement le CSV, l'extension Star Gap
+              récupère tes mots-clés directement depuis ton outil SEO favori.
+              Renseigne d'abord ton domaine principal ci-dessus.
+            </p>
           </div>
         </div>
+
+        {/* Choix de la source — grandes cards horizontales avec logos */}
+        <div className="mt-5 grid grid-cols-3 gap-2">
+          {IMPORT_SOURCES.map((s) => {
+            const active = importSource === s.value;
+            return (
+              <button
+                key={s.value}
+                type="button"
+                onClick={() => setImportSource(s.value)}
+                className={
+                  'group flex items-center gap-2.5 rounded-xl border p-3 text-left transition-all ' +
+                  (active
+                    ? 'border-accent/60 bg-accent/10 shadow-lg shadow-accent/20'
+                    : 'border-white/10 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.06]')
+                }
+              >
+                <SourceIcon source={s.value} size={28} />
+                <span
+                  className={
+                    'text-sm font-medium ' +
+                    (active ? 'text-text-primary' : 'text-text-secondary')
+                  }
+                >
+                  {s.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Bouton CTA principal */}
+        <div className="mt-5 flex items-center justify-end gap-3">
+          <button
+            type="button"
+            onClick={startImport}
+            disabled={importStarting || !myDomain.trim()}
+            className="btn-primary-glow inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {importStarting ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <ExternalLink size={14} />
+            )}
+            {importToken
+              ? 'Relancer'
+              : `Ouvrir ${IMPORT_SOURCES.find((s) => s.value === importSource)?.label}`}
+          </button>
+        </div>
+
+        {/* Feedback de statut */}
+        {importToken && importStatus === 'waiting' && (
+          <div className="mt-4 rounded-xl border border-accent/30 bg-bg-surface/60 p-3 text-xs backdrop-blur">
+            <p className="flex items-center gap-2 font-medium text-accent">
+              <Loader2 size={12} className="animate-spin" />
+              En attente du clic Export sur{' '}
+              {IMPORT_SOURCES.find((s) => s.value === importSource)?.label}…
+            </p>
+            <p className="mt-1 text-text-secondary">
+              Connecte-toi si besoin, puis clique sur{' '}
+              <strong className="text-text-primary">Export → CSV</strong> au-dessus
+              de la table. L'extension détecte le téléchargement et envoie tes
+              mots-clés vers Star Gap.
+            </p>
+          </div>
+        )}
+        {importStatus === 'completed' && (
+          <div className="mt-4 rounded-xl border border-green-400/40 bg-green-400/5 p-3 text-xs">
+            <p className="flex items-center gap-2 font-medium text-green-300">
+              <Sparkles size={12} />
+              Import réussi ! Redirection vers ton projet…
+            </p>
+          </div>
+        )}
+        {(importStatus === 'failed' || importStatus === 'expired') && importError && (
+          <div className="mt-4 rounded-xl border border-red-400/40 bg-red-400/5 p-3 text-xs">
+            <p className="flex items-center gap-2 font-medium text-red-300">
+              <AlertTriangle size={12} />
+              {importError}
+            </p>
+          </div>
+        )}
+        {importError && importStatus === 'idle' && (
+          <p className="mt-3 flex items-center gap-1.5 text-xs text-red-300">
+            <AlertTriangle size={11} />
+            {importError}
+          </p>
+        )}
       </section>
 
-      <section className="mt-6" data-tour-id="tour-my-site">
-        <h2 className="mb-3 text-sm font-semibold">Mon site</h2>
+      <section
+        className="glass-card glass-edge relative mt-6 overflow-hidden rounded-2xl p-6"
+        data-tour-id="tour-my-site"
+      >
+        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-text-muted">
+          Mon site
+        </h2>
         <SiteCard
           site={mySite}
           onChange={updateMySite}
@@ -451,11 +486,11 @@ export function NewProjectPage() {
         />
       </section>
 
-      <section className="mt-6">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">
+      <section className="glass-card glass-edge relative mt-6 overflow-hidden rounded-2xl p-6">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-text-muted">
             Concurrents{' '}
-            <span className="text-text-muted font-normal">
+            <span className="font-normal normal-case text-text-muted/70">
               ({competitors.length}
               {competitorLimit !== null && ` / ${competitorLimit}`})
             </span>
@@ -463,7 +498,7 @@ export function NewProjectPage() {
           <button
             type="button"
             onClick={addCompetitor}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle bg-bg-surface px-3 py-1.5 text-xs hover:border-border-strong"
+            className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.05] px-3 py-1.5 text-xs text-text-secondary backdrop-blur-sm transition-colors hover:border-white/25 hover:bg-white/[0.1] hover:text-text-primary"
           >
             <Plus size={14} />
             Ajouter un concurrent
@@ -471,7 +506,7 @@ export function NewProjectPage() {
         </div>
 
         {competitors.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border-subtle p-6 text-center text-sm text-text-muted">
+          <div className="rounded-xl border border-dashed border-white/15 p-6 text-center text-sm text-text-muted">
             Aucun concurrent pour l'instant.
           </div>
         ) : (
@@ -489,7 +524,7 @@ export function NewProjectPage() {
         )}
       </section>
 
-      <footer className="mt-8 flex items-center justify-between gap-4 rounded-lg border border-border-subtle bg-bg-surface p-4">
+      <footer className="glass-card glass-edge relative mt-8 flex items-center justify-between gap-4 overflow-hidden rounded-2xl p-5">
         <div className="text-xs text-text-secondary">
           {submitting && submitProgress ? (
             <span className="font-mono">
@@ -532,19 +567,20 @@ export function NewProjectPage() {
           onClick={onSubmit}
           disabled={!canSubmit}
           data-tour-id="tour-submit"
-          className="inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-bg-elevated disabled:text-text-muted"
+          className="btn-primary-glow inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
         >
           {submitting ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
           {submitting ? 'Sauvegarde…' : 'Lancer l\'analyse'}
         </button>
       </footer>
 
-      <UpgradeModal
-        open={upgradeResult !== null}
-        onClose={() => setUpgradeResult(null)}
-        result={upgradeResult}
-        currentPlan={plan}
-      />
+        <UpgradeModal
+          open={upgradeResult !== null}
+          onClose={() => setUpgradeResult(null)}
+          result={upgradeResult}
+          currentPlan={plan}
+        />
+      </div>
     </div>
   );
 }
