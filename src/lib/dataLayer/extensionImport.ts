@@ -20,6 +20,10 @@ export interface CreateImportSessionInput {
   // Si fourni → mode 'append' : on ajoute le domaine à ce projet existant
   // au lieu de créer un nouveau projet.
   existingProjectId?: string;
+  // Code pays (ISO-2). Utilisé uniquement en mode "new project" pour pré-
+  // remplir le pays du projet créé. Ignoré en mode 'append' (le pays vient
+  // du projet existant).
+  country?: string;
 }
 
 export interface CreateImportSessionResult {
@@ -42,6 +46,7 @@ export async function createImportSession(
       domain: input.domain,
       source: input.source ?? 'ahrefs',
       existing_project_id: input.existingProjectId ?? null,
+      country: input.country ?? null,
       status: 'pending',
     })
     .select('token, expires_at')

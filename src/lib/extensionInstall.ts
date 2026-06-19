@@ -17,7 +17,31 @@ import { useEffect, useState } from 'react';
 //   export const EXTENSION_INSTALL_URL = 'https://chrome.google.com/webstore/...';
 export const EXTENSION_INSTALL_URL = '#/install';
 
+// Version minimale attendue de l'extension. À bumper en même temps que le
+// manifest.json quand on release une nouvelle version qui ajoute / corrige
+// quelque chose côté communication app↔extension. Si l'extension détectée
+// est < EXTENSION_EXPECTED_VERSION, on affiche un banner "mise à jour
+// disponible". Tant qu'on est en sideload, l'user doit recharger
+// manuellement ; sur le Chrome Web Store, Chrome update auto sous 24h.
+export const EXTENSION_EXPECTED_VERSION = '1.0.0';
+
 const ATTR = 'data-stargap-extension';
+
+// Compare deux versions semver simples ("1.2.3"). Retourne :
+//   < 0 si a < b
+//   = 0 si a === b
+//   > 0 si a > b
+// Tolère les versions incomplètes (ex: "1.0" → "1.0.0").
+function compareVersions(a: string, b: string): number {
+  const pa = a.split('.').map((n) => parseInt(n, 10) || 0);
+  const pb = b.split('.').map((n) => parseInt(n, 10) || 0);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
 
 export function detectExtensionSync(): string | null {
   if (typeof document === 'undefined') return null;
@@ -27,6 +51,8 @@ export function detectExtensionSync(): string | null {
 export function useExtensionInstalled(): {
   installed: boolean;
   version: string | null;
+  needsUpdate: boolean;
+  expectedVersion: string;
 } {
   const [version, setVersion] = useState<string | null>(() => detectExtensionSync());
 
@@ -60,5 +86,13 @@ export function useExtensionInstalled(): {
     };
   }, []);
 
-  return { installed: version !== null, version };
+  const installed = version !== null;
+  const needsUpdate =
+    installed && compareVersions(version!, EXTENSION_EXPECTED_VERSION) < 0;
+  return {
+    installed,
+    version,
+    needsUpdate,
+    expectedVersion: EXTENSION_EXPECTED_VERSION,
+  };
 }

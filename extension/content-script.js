@@ -9,7 +9,7 @@
   if (window.__starGapExtensionLoaded) return;
   window.__starGapExtensionLoaded = true;
 
-  console.log('[Star Gap] Extension chargée sur', window.location.href);
+  console.debug('[Star Gap] Extension chargée sur', window.location.href);
 
   const BANNER_ID = 'sg-banner-root';
 
@@ -43,7 +43,7 @@
       });
 
       importStatus = 'active';
-      console.log('[Star Gap] Token Star Gap détecté, session active', { domain });
+      console.debug('[Star Gap] Token Star Gap détecté, session active', { domain });
 
       // Nettoie l'URL pour pas exposer le token.
       const cleanUrl = new URL(window.location.href);
@@ -163,7 +163,7 @@
     if (msg?.type === 'sg_import_status') {
       importStatus = msg.status;
       lastError = msg.error || null;
-      console.log('[Star Gap] Status import →', importStatus, msg);
+      console.debug('[Star Gap] Status import →', importStatus, msg);
       if (document.getElementById(BANNER_ID)) {
         injectOrUpdateBanner();
       }
@@ -176,7 +176,7 @@
     if (window.location.pathname === lastPath) return;
     lastPath = window.location.pathname;
     if (isOrganicKeywordsPage()) {
-      console.log('[Star Gap] Détection : page Organic Keywords active');
+      console.debug('[Star Gap] Détection : page Organic Keywords active');
       setTimeout(injectOrUpdateBanner, 800);
     } else {
       removeBanner();

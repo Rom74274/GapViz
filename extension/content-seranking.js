@@ -8,7 +8,7 @@
   if (window.__starGapExtensionLoaded) return;
   window.__starGapExtensionLoaded = true;
 
-  console.log('[Star Gap] Extension SE Ranking chargée sur', window.location.href);
+  console.debug('[Star Gap] Extension SE Ranking chargée sur', window.location.href);
 
   const BANNER_ID = 'sg-banner-root';
 
@@ -40,7 +40,7 @@
       });
 
       importStatus = 'active';
-      console.log('[Star Gap] Token Star Gap détecté (SE Ranking)', { domain });
+      console.debug('[Star Gap] Token Star Gap détecté (SE Ranking)', { domain });
 
       const cleanUrl = new URL(window.location.href);
       cleanUrl.searchParams.delete('starGapToken');
@@ -154,7 +154,7 @@
     if (msg?.type === 'sg_import_status') {
       importStatus = msg.status;
       lastError = msg.error || null;
-      console.log('[Star Gap] Status import →', importStatus, msg);
+      console.debug('[Star Gap] Status import →', importStatus, msg);
       if (document.getElementById(BANNER_ID)) {
         injectOrUpdateBanner();
       }
@@ -166,7 +166,7 @@
     if (window.location.pathname === lastPath) return;
     lastPath = window.location.pathname;
     if (isOrganicKeywordsPage()) {
-      console.log('[Star Gap] Détection : page SE Ranking Organic Keywords');
+      console.debug('[Star Gap] Détection : page SE Ranking Organic Keywords');
       setTimeout(injectOrUpdateBanner, 800);
     } else {
       removeBanner();

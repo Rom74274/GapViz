@@ -46,7 +46,7 @@ chrome.downloads.onCreated.addListener((downloadItem) => {
 
   if (!looksLikeCsv) return;
 
-  console.log(`[Star Gap] Download ${source} CSV détecté`, {
+  console.debug(`[Star Gap] Download ${source} CSV détecté`, {
     id: downloadItem.id,
     finalUrl: finalUrl.slice(0, 120),
     filename,
@@ -70,7 +70,7 @@ chrome.downloads.onChanged.addListener(async (delta) => {
   const meta = trackedDownloads.get(delta.id);
 
   if (newState === 'complete') {
-    console.log('[Star Gap] Download complete, refetch + POST', meta);
+    console.debug('[Star Gap] Download complete, refetch + POST', meta);
     await handleCompletedDownload(meta);
     trackedDownloads.delete(delta.id);
   } else if (newState === 'interrupted') {
@@ -87,7 +87,7 @@ async function handleCompletedDownload(meta) {
   const tokens = activeImportTokens || {};
   const activeImportToken = tokens[meta.source];
   if (!activeImportToken) {
-    console.log(`[Star Gap] Pas de token actif pour ${meta.source}, on ignore ce download`);
+    console.debug(`[Star Gap] Pas de token actif pour ${meta.source}, on ignore ce download`);
     return;
   }
 
@@ -121,7 +121,7 @@ async function handleCompletedDownload(meta) {
     const csvBlob = await csvRes.blob();
     if (csvBlob.size === 0) throw new Error(`CSV vide reçu de ${meta.source}`);
 
-    console.log(`[Star Gap] CSV ${meta.source} récupéré : ${csvBlob.size} bytes`);
+    console.debug(`[Star Gap] CSV ${meta.source} récupéré : ${csvBlob.size} bytes`);
 
     // 3) POST à l'Edge Function avec FormData.
     const form = new FormData();
@@ -140,7 +140,7 @@ async function handleCompletedDownload(meta) {
       throw new Error(result.message || result.error || `HTTP ${importRes.status}`);
     }
 
-    console.log('[Star Gap] Import OK', result);
+    console.debug('[Star Gap] Import OK', result);
     await sendStatusToActiveTab('success', { project_id: result.project_id });
 
     // Ferme automatiquement l'onglet Ahrefs 3s après le succès (laisse
@@ -210,11 +210,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       };
       chrome.storage.local.set({ activeImportTokens: tokens });
     });
-    console.log('[Star Gap] Session import enregistrée', { source, tabId, domain: msg.domain });
+    console.debug('[Star Gap] Session import enregistrée', { source, tabId, domain: msg.domain });
     sendResponse({ ok: true });
     return false;
   }
   return false;
 });
 
-console.log('[Star Gap] Background service worker prêt');
+console.debug('[Star Gap] Background service worker prêt');

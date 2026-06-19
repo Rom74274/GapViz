@@ -99,10 +99,12 @@ Deno.serve(async (req) => {
       token: string;
       user_id: string;
       domain: string | null;
+      country: string | null;
       existing_project_id: string | null;
     };
     const userId = session.user_id;
     const domain = providedDomain || session.domain || 'imported.local';
+    const country = (session.country ?? 'FR').toUpperCase();
     const appendToProjectId = session.existing_project_id;
 
     // 4) Décode + parse le CSV selon la source.
@@ -275,7 +277,7 @@ Deno.serve(async (req) => {
         user_id: userId,
         name: `Import ${source} — ${domain}`,
         my_domain: domain,
-        country: 'FR',
+        country,
       });
       if (error) {
         return jsonResponse({ error: 'project_insert_failed', message: error.message }, 500);

@@ -126,7 +126,12 @@ export function HomePage() {
     ? Object.values(stats).reduce((s, x) => s + x.gapCount, 0)
     : 0;
 
-  const { installed: extensionInstalled } = useExtensionInstalled();
+  const {
+    installed: extensionInstalled,
+    version: extensionVersion,
+    needsUpdate: extensionNeedsUpdate,
+    expectedVersion: extensionExpectedVersion,
+  } = useExtensionInstalled();
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-10">
@@ -149,8 +154,12 @@ export function HomePage() {
         </Link>
       </header>
 
-      {projectCount > 0 && !extensionInstalled && (
-        <ExtensionBanner />
+      {projectCount > 0 && !extensionInstalled && <ExtensionBanner />}
+      {projectCount > 0 && extensionInstalled && extensionNeedsUpdate && (
+        <ExtensionUpdateBanner
+          currentVersion={extensionVersion!}
+          expectedVersion={extensionExpectedVersion}
+        />
       )}
 
       <section className="mt-8">
@@ -408,6 +417,42 @@ function ExtensionBanner() {
       >
         <ExternalLink size={11} />
         Installer
+      </a>
+    </div>
+  );
+}
+
+function ExtensionUpdateBanner({
+  currentVersion,
+  expectedVersion,
+}: {
+  currentVersion: string;
+  expectedVersion: string;
+}) {
+  return (
+    <div className="mt-6 flex flex-wrap items-center gap-3 rounded-md border border-orange-400/40 bg-orange-400/5 px-4 py-3 text-xs">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-orange-400/15 text-orange-300">
+        <AlertTriangle size={13} />
+      </span>
+      <p className="min-w-0 flex-1 text-text-secondary">
+        <strong className="text-text-primary">
+          Mise à jour de l'extension disponible.
+        </strong>{' '}
+        Tu utilises la v{currentVersion}, la dernière version est la v{expectedVersion}.
+        Ouvre{' '}
+        <code className="rounded bg-bg-elevated px-1 py-0.5 text-text-primary">
+          chrome://extensions
+        </code>{' '}
+        et clique sur le bouton « Actualiser » de Star Gap Importer.
+      </p>
+      <a
+        href={EXTENSION_INSTALL_URL}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex items-center gap-1.5 rounded-md border border-orange-400/40 bg-orange-400/10 px-3 py-1.5 text-[11px] font-medium text-orange-300 hover:bg-orange-400/20"
+      >
+        <ExternalLink size={11} />
+        Voir
       </a>
     </div>
   );
