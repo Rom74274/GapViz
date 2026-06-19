@@ -346,7 +346,7 @@ export function NewProjectPage() {
       </section>
 
       {/* Import via extension Chrome (Ahrefs / Semrush) */}
-      <section className="mt-6">
+      <section className="mt-6" data-tour-id="tour-import">
         <div className="rounded-lg border border-accent/30 bg-accent/[0.04] p-4">
           <div className="flex items-start gap-3">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent">

@@ -52,19 +52,28 @@ const STEPS: Step[] = [
     placement: 'bottom',
   },
   {
-    targetId: 'tour-my-site',
+    targetId: 'tour-import',
     title: 'Étape 4 — Importe tes mots-clés',
     message:
-      'Glisse ton CSV (Ahrefs, Semrush ou GSC). Les colonnes sont détectées automatiquement.',
+      'Choisis Ahrefs, Semrush ou SE Ranking. L\'extension Chrome ouvre l\'outil avec ton domaine pré-rempli — un clic sur Export et Star Gap récupère tout automatiquement.',
+    advance: 'next',
+    expectedPath: /^\/projects\/new/,
+    placement: 'top',
+  },
+  {
+    targetId: 'tour-my-site',
+    title: 'Étape 5 — Mon site & concurrents',
+    message:
+      'Ton domaine est déjà ajouté ici. Tu pourras ajouter d\'autres concurrents après la création du projet, depuis la page projet.',
     advance: 'next',
     expectedPath: /^\/projects\/new/,
     placement: 'top',
   },
   {
     targetId: 'tour-submit',
-    title: 'Étape 5 — Lance l\'analyse',
+    title: 'Étape 6 — Lance l\'analyse',
     message:
-      'Clique sur "Lancer l\'analyse" pour créer ton projet. Tu pourras lancer le clustering juste après.',
+      'Clique sur "Lancer l\'analyse" pour créer ton projet. Tu pourras lancer le clustering IA juste après.',
     advance: 'click',
     expectedPath: /^\/projects\/new/,
     placement: 'top',
@@ -73,7 +82,7 @@ const STEPS: Step[] = [
     targetId: null,
     title: 'C\'est parti !',
     message:
-      'Une fois ton projet créé, tu pourras lancer le clustering IA et explorer le graph de tes gaps SEO.',
+      'Une fois ton projet créé, tu pourras lancer le clustering IA et explorer le graph de tes gaps SEO. Tu peux relancer ce tour à tout moment depuis les Réglages.',
     advance: 'finish',
     placement: 'center',
   },

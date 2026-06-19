@@ -95,11 +95,12 @@ export function SettingsPage() {
 
       <MigrationSection />
 
+      <OnboardingHelpSection />
+
       <AdvancedSection open={advancedOpen} onToggle={() => setAdvancedOpen(!advancedOpen)}>
         <BYOKSection />
         <ModelSection />
         <ClusterCacheSection />
-        <DevToolsSection />
       </AdvancedSection>
     </div>
   );
@@ -748,10 +749,10 @@ function formatBytes(b: number): string {
 }
 
 // ============================================================================
-// DevToolsSection — outils internes (à supprimer une fois l'onboarding stable).
+// OnboardingHelpSection — relance le tour de présentation à la demande.
 // ============================================================================
 
-function DevToolsSection() {
+function OnboardingHelpSection() {
   const restartOnboarding = () => {
     try {
       localStorage.removeItem('stargap-onboarding-completed');
@@ -763,19 +764,20 @@ function DevToolsSection() {
   };
 
   return (
-    <section className="space-y-3 rounded-lg border border-border-subtle border-dashed bg-bg-surface p-5">
+    <section className="mt-6 space-y-3 rounded-lg border border-border-subtle bg-bg-surface p-5">
       <div>
-        <h2 className="text-sm font-semibold">Outils dev</h2>
+        <h2 className="text-sm font-semibold">Tour de présentation</h2>
         <p className="mt-1 text-xs text-text-muted">
-          Section temporaire — sera supprimée une fois l'onboarding stable.
+          Relance le tour guidé qui s'affiche au premier login — utile pour
+          revoir le flow ou pour le présenter à quelqu'un.
         </p>
       </div>
       <button
         type="button"
         onClick={restartOnboarding}
-        className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle bg-bg-elevated px-3 py-1.5 text-xs text-text-secondary hover:border-accent/60 hover:text-accent"
+        className="inline-flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs text-accent hover:bg-accent/20"
       >
-        Relancer l'onboarding
+        Relancer le tour
       </button>
     </section>
   );
