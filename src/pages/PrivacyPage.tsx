@@ -23,7 +23,13 @@ export function PrivacyPage() {
             1. Responsable du traitement
           </h2>
           <p>
-            Romain Thomas, auto-entrepreneur, 3 rue Mignard.
+            Romain Thomas, entrepreneur individuel sous le régime de la
+            micro-entreprise.
+          </p>
+          <p className="mt-1">
+            Adresse : 3 rue Mignard, 75016 Paris, France
+            <br />
+            SIREN : <span className="font-mono">106 585 144</span>
           </p>
           <p className="mt-1">
             Contact :{' '}

@@ -26,7 +26,9 @@ export function CgvPage() {
             Les présentes Conditions Générales de Vente (ci-après « CGV »)
             régissent l'utilisation du service <strong>Star Gap</strong>, outil
             SaaS d'analyse SEO et de clustering de mots-clés, édité par Romain
-            Thomas, auto-entrepreneur, 3 rue Mignard (ci-après « l'Éditeur »).
+            Thomas, entrepreneur individuel sous le régime de la micro-entreprise,
+            domicilié 3 rue Mignard, 75016 Paris, SIREN 106 585 144 (ci-après «
+            l'Éditeur »).
           </p>
           <p className="mt-2">
             En créant un compte ou en souscrivant à un plan payant, l'utilisateur
@@ -65,7 +67,7 @@ export function CgvPage() {
             </tbody>
           </table>
           <p className="mt-3 text-xs text-text-muted">
-            TVA non applicable, art. 293 B du CGI (auto-entrepreneur en
+            TVA non applicable, art. 293 B du CGI (micro-entreprise en
             franchise de base de TVA).
           </p>
           <p className="mt-1 text-xs text-text-muted">
