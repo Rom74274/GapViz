@@ -146,17 +146,15 @@ export function HomePage() {
         {/* Header welcome — centré, mode hero, nom sur 2e ligne */}
         <header className="flex flex-col items-center text-center">
           {firstName ? (
-            <>
-              <p className="text-base font-medium tracking-tight text-text-secondary sm:text-lg">
-                Welcome back,
-              </p>
-              <h1 className="mt-1 text-4xl font-semibold tracking-tight sm:text-5xl">
+            <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
+              <span className="block">Welcome back,</span>
+              <span className="mt-1 block">
                 <span className="bg-gradient-to-r from-accent to-purple-300 bg-clip-text text-transparent">
                   {firstName}
                 </span>{' '}
                 <span className="inline-block">👋</span>
-              </h1>
-            </>
+              </span>
+            </h1>
           ) : (
             <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
               Tes projets SEO
