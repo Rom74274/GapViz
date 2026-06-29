@@ -48,10 +48,16 @@ export function CSVDropzone({ fileName, result, onParsed, onClear }: CSVDropzone
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = async (file: File) => {
+    console.debug('[CSVDropzone] handleFile', file.name, file.size, 'bytes');
     setStatus('parsing');
     setError(null);
     try {
       const r = await parseCSVFile(file);
+      console.debug('[CSVDropzone] parsed', {
+        format: r.format,
+        rowCount: 'rows' in r ? r.rows.length : 0,
+        headers: r.meta?.headers,
+      });
       if (r.format === 'unknown') {
         const text = await file.text();
         const signature = await hashHeaders(r.meta.headers);
@@ -72,6 +78,7 @@ export function CSVDropzone({ fileName, result, onParsed, onClear }: CSVDropzone
       onParsed(file.name, r);
       setStatus('idle');
     } catch (err) {
+      console.error('[CSVDropzone] parse error', err);
       setStatus('error');
       setError(err instanceof Error ? err.message : 'Erreur de lecture');
     }
@@ -137,7 +144,13 @@ export function CSVDropzone({ fileName, result, onParsed, onClear }: CSVDropzone
   return (
     <div>
       <div
-        onClick={() => inputRef.current?.click()}
+        onClick={() => {
+          // Guard contre les double-clics : ne ré-ouvre pas le picker tant
+          // qu'on n'est pas idle (sinon picker peut se relancer pendant le
+          // parsing → l'user croit que rien ne s'est passé).
+          if (status !== 'idle') return;
+          inputRef.current?.click();
+        }}
         onDragOver={(e) => {
           e.preventDefault();
           setIsDragging(true);
@@ -145,7 +158,9 @@ export function CSVDropzone({ fileName, result, onParsed, onClear }: CSVDropzone
         onDragLeave={() => setIsDragging(false)}
         onDrop={(e) => {
           e.preventDefault();
+          e.stopPropagation();
           setIsDragging(false);
+          if (status !== 'idle') return;
           const file = e.dataTransfer.files[0];
           if (file) handleFile(file);
         }}
