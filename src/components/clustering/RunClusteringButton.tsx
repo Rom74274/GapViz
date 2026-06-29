@@ -273,11 +273,11 @@ function SplitButton({
         onClick={onPrimary}
         disabled={status === 'running'}
         className={cn(
-          'inline-flex items-center gap-1.5 bg-accent font-medium text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50',
+          'btn-primary-glow inline-flex items-center gap-1.5 font-medium text-white disabled:cursor-not-allowed disabled:opacity-50',
           showSecondary
-            ? 'rounded-l-md border-r border-r-white/15'
-            : 'rounded-md',
-          small ? 'px-2.5 py-1 text-xs' : 'px-3 py-1.5 text-sm',
+            ? 'rounded-l-full border-r border-r-white/15'
+            : 'rounded-full',
+          small ? 'px-3 py-1.5 text-xs' : 'px-4 py-2 text-sm',
         )}
       >
         <Icon size={small ? 12 : 14} className={status === 'running' ? 'animate-spin' : ''} />
@@ -289,8 +289,8 @@ function SplitButton({
           onClick={() => setOpen((o) => !o)}
           disabled={status === 'running'}
           className={cn(
-            'inline-flex items-center rounded-r-md bg-accent text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50',
-            small ? 'px-1.5 py-1' : 'px-2 py-1.5',
+            'btn-primary-glow inline-flex items-center rounded-r-full text-white disabled:cursor-not-allowed disabled:opacity-50',
+            small ? 'px-2 py-1.5' : 'px-2.5 py-2',
           )}
           aria-label="Plus d'options"
         >
@@ -298,7 +298,7 @@ function SplitButton({
         </button>
       )}
       {open && showSecondary && (
-        <div className="absolute right-0 top-full z-30 mt-1 min-w-[260px] rounded-lg border border-border-subtle bg-bg-surface p-1 shadow-2xl">
+        <div className="glass-strong absolute right-0 top-full z-30 mt-1.5 min-w-[260px] rounded-xl p-1">
           <MenuItem
             onClick={() => {
               setOpen(false);

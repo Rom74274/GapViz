@@ -63,7 +63,7 @@ export function ProjectStats({ visibleKws, totalKws }: Props) {
         : 'from-red-500/80 to-red-400';
 
   return (
-    <div className="relative border-b border-border-subtle/70 bg-gradient-to-r from-bg-base/60 via-bg-surface/40 to-bg-base/60 px-5 py-3 backdrop-blur">
+    <div className="glass-toolbar relative z-10 px-5 py-3">
       <div className="flex flex-wrap items-center gap-x-7 gap-y-2.5">
         {/* KWS */}
         <StatBlock

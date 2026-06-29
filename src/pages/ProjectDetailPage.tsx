@@ -117,14 +117,14 @@ export function ProjectDetailPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border-subtle bg-bg-surface/60 px-5 py-2.5 backdrop-blur">
+      <header className="glass-toolbar relative z-10 flex flex-wrap items-center justify-between gap-3 px-5 py-3">
         <div className="flex items-center gap-3">
           <Link
             to="/projects"
-            className="rounded p-1 text-text-muted hover:bg-bg-elevated hover:text-text-primary"
+            className="glass-pill flex h-7 w-7 items-center justify-center rounded-full text-text-muted hover:text-text-primary"
             aria-label="Retour aux projets"
           >
-            <ArrowLeft size={16} />
+            <ArrowLeft size={14} />
           </Link>
           <h1 className="text-base font-semibold tracking-tight">{project.name}</h1>
           <span className="font-mono text-xs text-text-muted">
@@ -138,7 +138,7 @@ export function ProjectDetailPage() {
           <button
             type="button"
             onClick={() => setAddSiteOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle bg-bg-surface px-3 py-1.5 text-xs text-text-secondary hover:border-accent/60 hover:text-accent"
+            className="glass-pill inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary"
             title="Importer un autre site depuis Ahrefs"
           >
             <Plus size={12} />
@@ -221,14 +221,14 @@ function ViewToggle({
   onChange: (v: 'graph' | 'table') => void;
 }) {
   return (
-    <div className="inline-flex rounded-md border border-border-subtle p-0.5">
+    <div className="glass-pill inline-flex rounded-full p-0.5">
       <button
         type="button"
         onClick={() => onChange('graph')}
         className={cn(
-          'flex items-center gap-1 rounded-sm px-2 py-1 text-xs transition-colors',
+          'flex items-center gap-1 rounded-full px-2.5 py-1 text-xs transition-colors',
           view === 'graph'
-            ? 'bg-bg-elevated text-text-primary'
+            ? 'bg-white/15 text-text-primary'
             : 'text-text-muted hover:text-text-primary',
         )}
         title="Vue graph"
@@ -240,9 +240,9 @@ function ViewToggle({
         type="button"
         onClick={() => onChange('table')}
         className={cn(
-          'flex items-center gap-1 rounded-sm px-2 py-1 text-xs transition-colors',
+          'flex items-center gap-1 rounded-full px-2.5 py-1 text-xs transition-colors',
           view === 'table'
-            ? 'bg-bg-elevated text-text-primary'
+            ? 'bg-white/15 text-text-primary'
             : 'text-text-muted hover:text-text-primary',
         )}
         title="Vue tableau"
