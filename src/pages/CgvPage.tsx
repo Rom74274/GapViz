@@ -27,8 +27,8 @@ export function CgvPage() {
             régissent l'utilisation du service <strong>Star Gap</strong>, outil
             SaaS d'analyse SEO et de clustering de mots-clés, édité par Romain
             Thomas, entrepreneur individuel sous le régime de la micro-entreprise,
-            domicilié 3 rue Mignard, 75016 Paris, SIREN 106 585 144 (ci-après «
-            l'Éditeur »).
+            domicilié 3 rue Mignard, 75016 Paris, SIRET 106 585 144 00012 (ci-après
+            « l'Éditeur »).
           </p>
           <p className="mt-2">
             En créant un compte ou en souscrivant à un plan payant, l'utilisateur

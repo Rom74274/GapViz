@@ -29,7 +29,7 @@ export function PrivacyPage() {
           <p className="mt-1">
             Adresse : 3 rue Mignard, 75016 Paris, France
             <br />
-            SIREN : <span className="font-mono">106 585 144</span>
+            SIRET : <span className="font-mono">106 585 144 00012</span>
           </p>
           <p className="mt-1">
             Contact :{' '}
