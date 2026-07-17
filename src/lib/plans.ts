@@ -29,7 +29,7 @@ export const PLAN_LIMITS: Record<UserPlan, PlanLimits> = {
     tableRowsVisible: 20,
     csvExport: false,
     watermark: true,
-    managedModel: 'claude-haiku-4-5-20251001',
+    managedModel: 'claude-haiku-4-5',
   },
   pro: {
     maxProjects: 5,
@@ -39,7 +39,7 @@ export const PLAN_LIMITS: Record<UserPlan, PlanLimits> = {
     tableRowsVisible: null,
     csvExport: true,
     watermark: false,
-    managedModel: 'claude-sonnet-4-20250514',
+    managedModel: 'claude-sonnet-5',
   },
   agency: {
     maxProjects: null,
@@ -49,7 +49,7 @@ export const PLAN_LIMITS: Record<UserPlan, PlanLimits> = {
     tableRowsVisible: null,
     csvExport: true,
     watermark: false,
-    managedModel: 'claude-sonnet-4-20250514',
+    managedModel: 'claude-sonnet-5',
   },
 };
 

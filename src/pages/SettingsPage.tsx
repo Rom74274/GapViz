@@ -239,7 +239,7 @@ function ModelSection() {
       <div>
         <h2 className="text-sm font-semibold">Modèle de clustering (BYOK)</h2>
         <p className="mt-1 text-xs text-text-secondary">
-          Sonnet 4.6 recommandé pour le naming des clusters. Haiku si tu veux économiser.
+          Sonnet 5 recommandé pour le naming des clusters. Haiku si tu veux économiser.
           <span className="mt-1 block text-text-muted">
             Ce choix ne s'applique qu'au mode BYOK. En mode managé, le modèle dépend de ton plan
             (Haiku pour Free, Sonnet pour Pro/Agency).
@@ -252,9 +252,9 @@ function ModelSection() {
         disabled={!apiKey}
         className="rounded-md border border-border-subtle bg-bg-base px-3 py-2 font-mono text-sm focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
       >
-        <option value="claude-sonnet-4-6">claude-sonnet-4-6 (recommandé)</option>
-        <option value="claude-haiku-4-5-20251001">claude-haiku-4-5</option>
-        <option value="claude-opus-4-7">claude-opus-4-7</option>
+        <option value="claude-sonnet-5">claude-sonnet-5 (recommandé)</option>
+        <option value="claude-haiku-4-5">claude-haiku-4-5</option>
+        <option value="claude-opus-4-8">claude-opus-4-8</option>
       </select>
     </section>
   );

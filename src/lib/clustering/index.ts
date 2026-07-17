@@ -19,6 +19,12 @@ import { actualCost, CHUNK_SIZE, CHUNK_THRESHOLD } from './cost';
 export type { CostEstimate } from './cost';
 export { estimateClusteringCost, formatUSD, CHUNK_SIZE, CHUNK_THRESHOLD } from './cost';
 export { hashKeywordSet };
+export {
+  recoverUnclustered,
+  type RecoverReport,
+  type RecoverAssignment,
+  type RecoverOptions,
+} from './recover';
 
 const MAX_TOKENS = 32768;
 

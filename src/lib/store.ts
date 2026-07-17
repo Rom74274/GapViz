@@ -12,7 +12,7 @@ export const useSettings = create<SettingsState>()(
   persist(
     (set) => ({
       apiKey: null,
-      model: 'claude-sonnet-4-6',
+      model: 'claude-sonnet-5',
       setApiKey: (apiKey) => set({ apiKey }),
       setModel: (model) => set({ model }),
     }),

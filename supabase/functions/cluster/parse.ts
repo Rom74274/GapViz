@@ -95,6 +95,7 @@ export function parseClusterResponse(
     throw new ClusterParseError('Champ "clusters" manquant ou non-array');
   }
 
+  // Fallback "chaînes" (rétro-compat / robustesse si Claude renvoie du texte).
   const inputIndex = new Map<string, string>();
   for (const kw of inputKeywords) {
     inputIndex.set(normalize(kw), kw);
@@ -106,10 +107,30 @@ export function parseClusterResponse(
     if (typeof raw !== 'object' || raw === null) continue;
     const c = raw as Record<string, unknown>;
     const name = typeof c.name === 'string' ? c.name.trim() : '';
-    const kwArr = Array.isArray(c.keywords) ? c.keywords : [];
-    if (!name || kwArr.length === 0) continue;
+    if (!name) continue;
 
     const cleanKeywords: string[] = [];
+
+    // Protocole principal : "ids" = numéros (1-based) référençant inputKeywords.
+    // Robuste : pas d'oubli silencieux, pas de reformulation, output court.
+    const ids = Array.isArray(c.ids) ? c.ids : [];
+    for (const idRaw of ids) {
+      const id =
+        typeof idRaw === 'number'
+          ? idRaw
+          : typeof idRaw === 'string'
+            ? Number.parseInt(idRaw, 10)
+            : NaN;
+      if (!Number.isInteger(id) || id < 1 || id > inputKeywords.length) continue;
+      const original = inputKeywords[id - 1]!;
+      if (!matched.has(original)) {
+        cleanKeywords.push(original);
+        matched.add(original);
+      }
+    }
+
+    // Fallback : "keywords" = chaînes.
+    const kwArr = Array.isArray(c.keywords) ? c.keywords : [];
     for (const kw of kwArr) {
       if (typeof kw !== 'string') continue;
       const original = inputIndex.get(normalize(kw));
@@ -118,6 +139,7 @@ export function parseClusterResponse(
         matched.add(original);
       }
     }
+
     if (cleanKeywords.length > 0) {
       clusters.push({ name, keywords: cleanKeywords });
     }

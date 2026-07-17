@@ -4,6 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowLeft, AlertCircle, Network, Table2, Plus } from 'lucide-react';
 import { db } from '@/lib/db';
 import { RunClusteringButton } from '@/components/clustering/RunClusteringButton';
+import { RecoverUnclusteredButton } from '@/components/clustering/RecoverUnclusteredButton';
 import { AddSiteFromExport } from '@/components/onboarding/AddSiteFromExport';
 import { GraphCanvas, type GraphCanvasHandle } from '@/components/graph/GraphCanvas';
 import { Starfield } from '@/components/Starfield';
@@ -145,6 +146,7 @@ export function ProjectDetailPage() {
             Ajouter un site
           </button>
           <ViewToggle view={view} onChange={setView} />
+          <RecoverUnclusteredButton projectId={projectId!} />
           <RunClusteringButton projectId={projectId!} variant="compact" />
         </div>
       </header>

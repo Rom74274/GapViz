@@ -4,8 +4,8 @@ Clustering managé Claude pour les utilisateurs sans BYOK. Étape 3a du brief Sa
 
 ## Modèle utilisé
 
-- **Free** : `claude-haiku-4-5-20251001`
-- **Pro / Agency** : `claude-sonnet-4-20250514`
+- **Free** : `claude-haiku-4-5`
+- **Pro / Agency** : `claude-sonnet-5`
 
 (Définis dans `PLAN_MODELS` ici et dans `src/lib/plans.ts` côté browser — garder synchronisés.)
 

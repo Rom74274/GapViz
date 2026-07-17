@@ -36,9 +36,9 @@ import { parseClusterResponse, type ClusterAssignment } from './parse.ts';
 // -----------------------------------------------------------------------------
 
 const PLAN_MODELS: Record<string, string> = {
-  free: 'claude-haiku-4-5-20251001',
-  pro: 'claude-sonnet-4-20250514',
-  agency: 'claude-sonnet-4-20250514',
+  free: 'claude-haiku-4-5',
+  pro: 'claude-sonnet-5',
+  agency: 'claude-sonnet-5',
 };
 
 const PLAN_QUOTAS: Record<string, number | null> = {

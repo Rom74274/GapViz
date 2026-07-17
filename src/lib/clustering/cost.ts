@@ -1,8 +1,9 @@
-// Tarifs Anthropic en USD par million de tokens (Sonnet 4.6, indicatif).
+// Tarifs Anthropic en USD par million de tokens (indicatif, modèles actuels).
+// Sonnet 5 : tarif standard 3/15 (tarif intro 2/10 jusqu'au 2026-08-31).
 const PRICING: Record<string, { input: number; output: number }> = {
-  'claude-sonnet-4-6': { input: 3, output: 15 },
-  'claude-haiku-4-5-20251001': { input: 0.8, output: 4 },
-  'claude-opus-4-7': { input: 15, output: 75 },
+  'claude-sonnet-5': { input: 3, output: 15 },
+  'claude-haiku-4-5': { input: 1, output: 5 },
+  'claude-opus-4-8': { input: 5, output: 25 },
 };
 
 // Au-delà de ce seuil, on bascule en clustering chunked.
@@ -21,9 +22,11 @@ export function estimateClusteringCost(
   kwCount: number,
   model: string,
 ): CostEstimate {
+  // Output : Claude renvoie des NUMÉROS (ids), pas les chaînes → ~3 tokens/KW
+  // (numéro + séparateur + structure amortie), vs ~6 avec l'ancien protocole.
   if (kwCount <= CHUNK_THRESHOLD) {
     const inputTokens = Math.round(400 + kwCount * 8);
-    const outputTokens = Math.round(200 + kwCount * 6);
+    const outputTokens = Math.round(200 + kwCount * 3);
     return {
       inputTokens,
       outputTokens,
@@ -37,7 +40,7 @@ export function estimateClusteringCost(
   const chunks = Math.ceil(kwCount / CHUNK_SIZE);
   const firstInput = 400 + CHUNK_SIZE * 8;
   const followupInput = firstInput + 800;
-  const perOutput = 200 + CHUNK_SIZE * 6;
+  const perOutput = 200 + CHUNK_SIZE * 3;
   const inputTokens = Math.round(firstInput + (chunks - 1) * followupInput);
   const outputTokens = Math.round(chunks * perOutput);
   return {
@@ -49,7 +52,7 @@ export function estimateClusteringCost(
 }
 
 function computeUSD(input: number, output: number, model: string): number {
-  const rates = PRICING[model] ?? PRICING['claude-sonnet-4-6']!;
+  const rates = PRICING[model] ?? PRICING['claude-sonnet-5']!;
   return (input * rates.input + output * rates.output) / 1_000_000;
 }
 

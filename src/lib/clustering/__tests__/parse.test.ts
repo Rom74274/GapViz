@@ -17,6 +17,50 @@ describe('parseClusterResponse', () => {
     expect(r.unmatched).toEqual([]);
   });
 
+  it('parses the "ids" protocol (numéros 1-based)', () => {
+    const text = JSON.stringify({
+      clusters: [
+        { name: 'Planning', ids: [1, 3] },
+        { name: 'Paie & RH', ids: [2, 4] },
+      ],
+    });
+    const r = parseClusterResponse(text, INPUT);
+    expect(r.clusters).toHaveLength(2);
+    expect(r.clusters[0]!.keywords).toEqual(['logiciel planning', 'planning équipe']);
+    expect(r.clusters[1]!.keywords).toEqual(['gestion paie', 'sirh']);
+    expect(r.unmatched).toEqual([]);
+  });
+
+  it('reports unmatched ids (numéros oubliés)', () => {
+    const text = JSON.stringify({ clusters: [{ name: 'Planning', ids: [1, 3] }] });
+    const r = parseClusterResponse(text, INPUT);
+    expect(r.unmatched).toEqual(['gestion paie', 'sirh']);
+  });
+
+  it('ignores out-of-range ids', () => {
+    const text = JSON.stringify({ clusters: [{ name: 'X', ids: [1, 99, 0, -2] }] });
+    const r = parseClusterResponse(text, INPUT);
+    expect(r.clusters[0]!.keywords).toEqual(['logiciel planning']);
+  });
+
+  it('accepts numeric string ids ("1")', () => {
+    const text = JSON.stringify({ clusters: [{ name: 'X', ids: ['1', '2'] }] });
+    const r = parseClusterResponse(text, INPUT);
+    expect(r.clusters[0]!.keywords).toEqual(['logiciel planning', 'gestion paie']);
+  });
+
+  it('dedupes an id assigned to 2 clusters', () => {
+    const text = JSON.stringify({
+      clusters: [
+        { name: 'A', ids: [1] },
+        { name: 'B', ids: [1] },
+      ],
+    });
+    const r = parseClusterResponse(text, INPUT);
+    expect(r.clusters).toHaveLength(1);
+    expect(r.clusters[0]!.name).toBe('A');
+  });
+
   it('extracts JSON when surrounded by prose', () => {
     const text = `Voici les clusters :\n${JSON.stringify({
       clusters: [{ name: 'Planning', keywords: INPUT }],
