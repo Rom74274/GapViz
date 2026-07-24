@@ -70,6 +70,8 @@ interface DragState {
 const FADE_IN_MS = 1200;
 const ABSENT_CLUSTER_COLOR = '#f59e0b';
 const OPACITY_LERP = 0.18;
+// Couleur neutre des liens (style épuré façon Obsidian).
+const LINK_COLOR = '#8a8fb0';
 
 export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCanvas(
   { projectId, highlightedClusterId, onCountsChange, selectedKeywordId, onSelectKeyword },
@@ -206,7 +208,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
 
     const now = performance.now();
     const fade = Math.max(0, Math.min(1, (now - fadeStartRef.current) / FADE_IN_MS));
-    const breathing = 1 + 0.025 * Math.sin(now / 1500);
+    const breathing = 1; // épuré : plus de pulsation des nœuds
 
     ctx.save();
     ctx.scale(dpr, dpr);
@@ -228,7 +230,6 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
     ctx.scale(t.k, t.k);
 
     drawLinks(ctx, graph.links, fade, t.k, highlightedClusterId, opMap);
-    drawParticles(ctx, particlesRef.current, graph.links, fade, opMap);
     drawNodesAndHalos(ctx, graph.nodes, {
       fade,
       breathing,
@@ -279,6 +280,9 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
       particlesRef.current.push({ linkIdx: idx, t: Math.random(), speed: 0.00012, size: 1.2 });
     });
 
+    // Rayon de l'anneau sur lequel se répartissent les clusters (layout circulaire).
+    const ringRadius = Math.min(size.width, size.height) * 0.34;
+
     const sim = d3
       .forceSimulation<GraphNode>(graph.nodes)
       .alpha(1)
@@ -291,13 +295,14 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
           .forceLink<GraphNode, GraphLink>(graph.links)
           .id((d) => d.id)
           .distance((l) => {
-            if (l.kind === 'center-cluster') return 240;
+            if (l.kind === 'center-cluster') return ringRadius;
             if (l.kind === 'cluster-cluster') return 280;
             if (l.kind === 'cluster-keyword') return 60;
             return 50;
           })
           .strength((l) => {
-            if (l.kind === 'center-cluster') return 0.55;
+            // center-cluster faible : c'est forceRadial qui place les clusters sur l'anneau.
+            if (l.kind === 'center-cluster') return 0.12;
             if (l.kind === 'cluster-cluster') return 0.05;
             if (l.kind === 'cluster-keyword') return 0.5;
             return 0.06;
@@ -313,6 +318,19 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
       .force(
         'collide',
         d3.forceCollide<GraphNode>().radius((d) => d.radius + 2).strength(0.85),
+      )
+      // Anneau : pousse les clusters sur un cercle de rayon constant autour du
+      // centre → rendu circulaire harmonisé. Les mots-clés (strength 0) restent
+      // en satellites de leur cluster via le lien cluster-keyword.
+      .force(
+        'radial',
+        d3
+          .forceRadial<GraphNode>(
+            (d) => (d.kind === 'cluster' ? ringRadius : 0),
+            size.width / 2,
+            size.height / 2,
+          )
+          .strength((d) => (d.kind === 'cluster' ? 0.45 : 0)),
       );
 
     sim.on('tick', () => {
@@ -725,65 +743,30 @@ function drawLinks(
         (t.kind === 'keyword' && (t as KeywordNode).clusterId === highlightedClusterId));
     const dim = highlightedClusterId && !involvesHighlight ? 0.25 : 1;
 
+    // Style épuré : liens gris neutres translucides (façon Obsidian), fins.
     let baseOpacity: number;
     let lineWidth: number;
     if (l.kind === 'center-cluster') {
-      baseOpacity = 0.28;
-      lineWidth = 1.5;
+      baseOpacity = 0.12;
+      lineWidth = 1;
     } else if (l.kind === 'cluster-cluster') {
-      baseOpacity = Math.min(0.35, 0.05 + (l.weight ?? 1) * 0.04);
-      lineWidth = Math.min(1.6, 0.5 + (l.weight ?? 1) * 0.18);
-    } else if (l.kind === 'cluster-keyword') {
-      baseOpacity = 0.16;
+      baseOpacity = Math.min(0.14, 0.05 + (l.weight ?? 1) * 0.02);
       lineWidth = 0.8;
+    } else if (l.kind === 'cluster-keyword') {
+      baseOpacity = 0.1;
+      lineWidth = 0.7;
     } else {
-      baseOpacity = 0.07;
-      lineWidth = 0.6;
+      baseOpacity = 0.05;
+      lineWidth = 0.5;
     }
 
     const finalAlpha = baseOpacity * fade * dim * linkOp;
-    try {
-      const grad = ctx.createLinearGradient(s.x, s.y, t.x, t.y);
-      grad.addColorStop(0, withAlpha(l.color, finalAlpha));
-      grad.addColorStop(1, withAlpha('#ffffff', finalAlpha * 0.35));
-      ctx.strokeStyle = grad;
-    } catch {
-      ctx.strokeStyle = withAlpha(l.color, finalAlpha);
-    }
+    ctx.strokeStyle = withAlpha(LINK_COLOR, finalAlpha);
     ctx.lineWidth = lineWidth / Math.max(0.5, zoomK / 1.5);
-    if (l.kind === 'cluster-cluster') ctx.setLineDash([4, 6]);
     ctx.beginPath();
     ctx.moveTo(s.x, s.y);
     ctx.lineTo(t.x, t.y);
     ctx.stroke();
-    ctx.setLineDash([]);
-  }
-}
-
-function drawParticles(
-  ctx: CanvasRenderingContext2D,
-  particles: Particle[],
-  links: GraphLink[],
-  fade: number,
-  opacityMap: Map<string, NodeOpacity>,
-): void {
-  for (const p of particles) {
-    const link = links[p.linkIdx];
-    if (!link) continue;
-    const s = link.source as GraphNode;
-    const t = link.target as GraphNode;
-    if (s.x === undefined || s.y === undefined || t.x === undefined || t.y === undefined) continue;
-    const linkOp = Math.min(getOp(opacityMap, s.id), getOp(opacityMap, t.id));
-    if (linkOp < 0.1) continue;
-    const x = s.x + (t.x - s.x) * p.t;
-    const y = s.y + (t.y - s.y) * p.t;
-    const grad = ctx.createRadialGradient(x, y, 0, x, y, p.size * 4);
-    grad.addColorStop(0, `rgba(255, 255, 255, ${0.55 * fade * linkOp})`);
-    grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(x, y, p.size * 4, 0, Math.PI * 2);
-    ctx.fill();
   }
 }
 
@@ -818,12 +801,6 @@ function drawNodesAndHalos(
     }
   }
   for (const n of nodes) {
-    const op = getOp(s.opacities, n.id);
-    if (op < 0.05) continue;
-    drawAmbientHalo(ctx, n, s.fade * op);
-  }
-
-  for (const n of nodes) {
     if (n.kind === 'keyword') drawKeyword(ctx, n, s);
   }
   for (const n of nodes) {
@@ -842,25 +819,6 @@ function drawNodesAndHalos(
 function getDepthOpacity(radius: number): number {
   const t = Math.max(0, Math.min(1, (radius - 2) / 22));
   return 0.45 + 0.55 * t;
-}
-
-function drawAmbientHalo(ctx: CanvasRenderingContext2D, n: GraphNode, alpha: number): void {
-  if (n.x === undefined || n.y === undefined) return;
-  const color =
-    n.kind === 'keyword'
-      ? n.primaryColor
-      : n.kind === 'center'
-        ? n.color
-        : '#9aa0ff';
-  const inner = n.radius;
-  const outer = n.radius + 3;
-  const grad = ctx.createRadialGradient(n.x, n.y, inner, n.x, n.y, outer);
-  grad.addColorStop(0, withAlpha(color, 0.08 * alpha));
-  grad.addColorStop(1, withAlpha(color, 0));
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.arc(n.x, n.y, outer, 0, Math.PI * 2);
-  ctx.fill();
 }
 
 function drawGapGlow(ctx: CanvasRenderingContext2D, n: KeywordNode, alpha: number): void {
@@ -941,24 +899,11 @@ function drawCenter(
   if (n.x === undefined || n.y === undefined) return;
   ctx.globalAlpha = s.fade;
   const r = n.radius * s.breathing;
-  const now = performance.now();
 
-  // Halo externe pulsant (4 sec) — donne vie au centre, visible mais sobre.
-  const pulse = 0.32 + 0.12 * Math.sin((2 * Math.PI * now) / 4000); // 20–44%
-  const outerR = r * 4.0;
-  const outerGrad = ctx.createRadialGradient(n.x, n.y, r * 1.6, n.x, n.y, outerR);
-  outerGrad.addColorStop(0, withAlpha(n.color, pulse));
-  outerGrad.addColorStop(0.5, withAlpha(n.color, pulse * 0.4));
-  outerGrad.addColorStop(1, withAlpha(n.color, 0));
-  ctx.fillStyle = outerGrad;
-  ctx.beginPath();
-  ctx.arc(n.x, n.y, outerR, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Halo interne statique (intense, focus).
-  const innerR = r * 2.4;
+  // Halo léger statique pour marquer le centre sans surcharger (épuré).
+  const innerR = r * 2.2;
   const grad = ctx.createRadialGradient(n.x, n.y, r, n.x, n.y, innerR);
-  grad.addColorStop(0, withAlpha(n.color, 0.55));
+  grad.addColorStop(0, withAlpha(n.color, 0.18));
   grad.addColorStop(1, withAlpha(n.color, 0));
   ctx.fillStyle = grad;
   ctx.beginPath();
@@ -969,8 +914,8 @@ function drawCenter(
   ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
   ctx.fillStyle = n.color;
   ctx.fill();
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+  ctx.lineWidth = 1.5;
   ctx.stroke();
   ctx.globalAlpha = 1;
 }
