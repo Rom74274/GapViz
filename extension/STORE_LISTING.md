@@ -41,7 +41,7 @@ Star Gap Importer automatise l'import de tes exports d'outils SEO (Ahrefs, Semru
 
 🎯 À QUOI ÇA SERT
 
-Star Gap (https://rom74274.github.io/GapViz/) est un outil d'analyse de gap concurrentiel SEO qui visualise tes mots-clés et ceux de tes concurrents sous forme de clusters thématiques.
+Star Gap (https://stargap.app/) est un outil d'analyse de gap concurrentiel SEO qui visualise tes mots-clés et ceux de tes concurrents sous forme de clusters thématiques.
 
 Pour alimenter l'analyse, tu dois importer tes exports d'outils SEO. Sans cette extension, le processus est laborieux :
   1. Exporter le CSV depuis Ahrefs / Semrush / SE Ranking
@@ -84,13 +84,13 @@ Avec l'extension, tout est automatique : tu cliques "Importer depuis Ahrefs" dan
 → Aucune transmission à des tiers (sauf Supabase, sous-traitant de Star Gap pour le stockage)
 → Le code source est publiquement consultable sur GitHub
 
-Politique de confidentialité complète : https://rom74274.github.io/GapViz/#/privacy
+Politique de confidentialité complète : https://app.stargap.app/#/privacy
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 📋 PRÉ-REQUIS
 
-→ Un compte Star Gap (gratuit) — créer le tien sur https://rom74274.github.io/GapViz/
+→ Un compte Star Gap (gratuit) — créer le tien sur https://stargap.app/
 → Un compte actif sur au moins un des outils supportés (Ahrefs, Semrush, ou SE Ranking) avec accès à l'export CSV
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -112,7 +112,7 @@ Star Gap Importer automates the import of your SEO tool exports (Ahrefs, Semrush
 
 🎯 WHAT IT DOES
 
-Star Gap (https://rom74274.github.io/GapViz/) is a competitive SEO gap analysis tool that visualizes your keywords and those of your competitors as thematic clusters.
+Star Gap (https://stargap.app/) is a competitive SEO gap analysis tool that visualizes your keywords and those of your competitors as thematic clusters.
 
 To feed the analysis, you need to import your SEO tool exports. Without this extension, the process is tedious:
   1. Export the CSV from Ahrefs / Semrush / SE Ranking
@@ -155,13 +155,13 @@ With the extension, everything is automatic: click "Import from Ahrefs" inside S
 → No third-party transmission (except Supabase, Star Gap's storage subprocessor)
 → Source code is publicly available on GitHub
 
-Full privacy policy: https://rom74274.github.io/GapViz/#/privacy
+Full privacy policy: https://app.stargap.app/#/privacy
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 📋 REQUIREMENTS
 
-→ A free Star Gap account — create one at https://rom74274.github.io/GapViz/
+→ A free Star Gap account — create one at https://stargap.app/
 → An active account on at least one of the supported tools (Ahrefs, Semrush, or SE Ranking) with CSV export access
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -258,8 +258,8 @@ Cochez dans le formulaire :
 
 | Champ | Valeur |
 |---|---|
-| **Website (homepage URL)** | `https://rom74274.github.io/GapViz/` |
-| **Privacy policy URL** | `https://rom74274.github.io/GapViz/#/privacy` |
+| **Website (homepage URL)** | `https://stargap.app/` |
+| **Privacy policy URL** | `https://app.stargap.app/#/privacy` |
 | **Support email** | `r.thomas74274@gmail.com` |
 | **Support URL** *(optionnel)* | `https://github.com/Rom74274/GapViz/issues` |
 

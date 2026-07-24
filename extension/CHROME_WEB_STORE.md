@@ -22,9 +22,12 @@ Le ZIP doit contenir uniquement les fichiers de l'extension (pas les README, pas
 ```bash
 cd /Users/Romain.Thomas/GapViz/extension
 # Bumper la version dans manifest.json si nécessaire (semver)
-zip -r star-gap-importer-v0.1.0.zip \
+zip -r star-gap-importer-v1.0.0.zip \
   manifest.json \
   content-script.js \
+  content-semrush.js \
+  content-seranking.js \
+  stargap-content.js \
   content-style.css \
   background.js \
   popup.html \
@@ -33,7 +36,9 @@ zip -r star-gap-importer-v0.1.0.zip \
   icons/
 ```
 
-⚠️ Vérifier que `manifest.json` n'a pas de `host_permissions` excessives (sinon review longue). Actuellement on a `app.ahrefs.com` + `functions.supabase.co` — c'est correct et défensif.
+⚠️ IMPORTANT : inclure TOUS les content-scripts (`content-semrush.js`, `content-seranking.js`, `stargap-content.js`), sinon Semrush / SE Ranking et la détection de l'app cassent dans l'extension publiée.
+
+⚠️ Vérifier que `manifest.json` n'a pas de `host_permissions` excessives (sinon review longue). Actuellement : `app.ahrefs.com`, `*.semrush.com`, `*.seranking.com`, `*.functions.supabase.co` — correct et défensif. La détection de l'app (`app.stargap.app`) passe par un content-script, pas par une host_permission.
 
 ## Étape 3 — Métadonnées à remplir sur le Dashboard
 
@@ -57,7 +62,7 @@ Star Gap Importer connecte ton compte Ahrefs à Star Gap, l'outil d'analyse SEO 
 Au lieu d'exporter manuellement un CSV depuis Ahrefs et de le glisser dans Star Gap, l'extension fait le pont automatiquement : tu cliques sur "Importer depuis Ahrefs" dans ton projet Star Gap, l'extension t'amène sur la bonne page Ahrefs avec ton domaine pré-rempli, et au clic sur "Export" elle envoie tes mots-clés directement vers ton compte Star Gap.
 
 ➜ Comment ça marche
-1. Crée un projet sur Star Gap (https://rom74274.github.io/GapViz/)
+1. Crée un projet sur Star Gap (https://stargap.app/)
 2. Renseigne ton domaine et clique "Importer depuis Ahrefs"
 3. L'extension ouvre Ahrefs et te guide jusqu'au bouton Export
 4. Au clic Export, tes mots-clés sont envoyés à Star Gap en quelques secondes
@@ -114,7 +119,7 @@ Cette extension est open source. Code et politique de confidentialité disponibl
 Lien obligatoire. On réutilise celui de l'app :
 
 ```
-https://rom74274.github.io/GapViz/#/privacy
+https://app.stargap.app/#/privacy
 ```
 
 ⚠️ Vérifier que la page mentionne bien l'extension Chrome dans ce qu'elle décrit.
