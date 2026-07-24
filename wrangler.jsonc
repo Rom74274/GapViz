@@ -1,0 +1,13 @@
+{
+  // Déploiement Cloudflare Workers (static assets) de l'app Star Gap.
+  // `wrangler deploy` publie le dossier ./dist produit par `npm run build`.
+  // Le nom doit correspondre au projet Cloudflare ("stargap").
+  "name": "stargap",
+  "compatibility_date": "2025-06-01",
+  "assets": {
+    "directory": "./dist",
+    // SPA : toute route inconnue renvoie index.html (sécurité ; l'app utilise
+    // surtout le routing en #/hash, mais ça évite tout 404 sur un chemin direct).
+    "not_found_handling": "single-page-application"
+  }
+}

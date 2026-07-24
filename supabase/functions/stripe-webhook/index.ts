@@ -11,11 +11,19 @@
 // pouvoir update n'importe quel profile via user_id.
 //
 // Secrets requis :
-//   STRIPE_SECRET_KEY         — pour initialiser le client Stripe
-//   STRIPE_WEBHOOK_SECRET     — whsec_xxx pour vérifier la signature
-//   SB_SERVICE_ROLE_KEY       — pour update profiles sans RLS (pas SUPABASE_ car réservé par la CLI)
-//   STRIPE_PRICE_PRO          — pour mapper price → plan
-//   STRIPE_PRICE_AGENCY       — idem
+//   STRIPE_SECRET_KEY          — pour initialiser le client Stripe
+//   STRIPE_WEBHOOK_SECRET      — whsec_xxx pour vérifier la signature
+//   SB_SERVICE_ROLE_KEY        — pour update profiles sans RLS (pas SUPABASE_ car réservé par la CLI)
+//   STRIPE_PRICE_PRO           — mensuel Pro    → plan (mapping price → plan)
+//   STRIPE_PRICE_AGENCY        — mensuel Agency → plan
+//   STRIPE_PRICE_PRO_ANNUAL    — annuel Pro     → plan
+//   STRIPE_PRICE_AGENCY_ANNUAL — annuel Agency  → plan
+//
+// Politique de réponse HTTP (importante pour la fiabilité) :
+//   - Échec d'écriture DB (potentiellement transitoire) → 500 pour que Stripe
+//     RETENTE. Sinon un paiement encaissé peut ne jamais activer le plan.
+//   - Cas où un retry ne servirait à rien (metadata manquante, price inconnu,
+//     event non géré) → 200 + log, pour ne pas boucler puis désactiver l'endpoint.
 // =============================================================================
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
@@ -57,13 +65,19 @@ Deno.serve(async (req) => {
 
   console.log('[stripe-webhook] event', event.type, event.id);
 
-  // Mapping price_id → plan.
-  const pricePro = Deno.env.get('STRIPE_PRICE_PRO') ?? '';
-  const priceAgency = Deno.env.get('STRIPE_PRICE_AGENCY') ?? '';
-  const priceToplan = new Map<string, string>([
-    [pricePro, 'pro'],
-    [priceAgency, 'agency'],
-  ]);
+  // Mapping price_id → plan. Inclut les prix mensuels ET annuels ; les
+  // secrets non configurés sont ignorés (sinon un price_id vide "" mapperait
+  // par erreur vers un plan).
+  const priceToplan = new Map<string, string>();
+  for (const [envName, plan] of [
+    ['STRIPE_PRICE_PRO', 'pro'],
+    ['STRIPE_PRICE_PRO_ANNUAL', 'pro'],
+    ['STRIPE_PRICE_AGENCY', 'agency'],
+    ['STRIPE_PRICE_AGENCY_ANNUAL', 'agency'],
+  ] as const) {
+    const id = Deno.env.get(envName);
+    if (id) priceToplan.set(id, plan);
+  }
 
   try {
     switch (event.type) {
@@ -86,8 +100,9 @@ Deno.serve(async (req) => {
             stripe_subscription_id: session.subscription as string,
           })
           .eq('id', userId);
-        if (error) console.error('[stripe-webhook] update profile failed', error);
-        else console.log('[stripe-webhook] plan set to', plan, 'for user', userId);
+        // Erreur DB → throw → 500 → Stripe retente (le paiement doit activer le plan).
+        if (error) throw new Error(`update profile failed: ${error.message}`);
+        console.log('[stripe-webhook] plan set to', plan, 'for user', userId);
         break;
       }
 
@@ -99,21 +114,36 @@ Deno.serve(async (req) => {
         const userId = sub.metadata?.supabase_user_id;
         if (!userId) {
           console.warn('[stripe-webhook] no supabase_user_id in sub metadata', sub.id);
+          break; // 200 : un retry ne réparera pas des metadata absentes
+        }
+
+        // Statut de l'abonnement : un abo suspendu ne doit pas garder un plan payant.
+        // - canceled / unpaid → abo terminé ou impayé définitif → repasse Free.
+        // - past_due → on garde l'accès le temps du dunning Stripe (grâce).
+        // - active / trialing → plan déduit du price.
+        if (sub.status === 'canceled' || sub.status === 'unpaid') {
+          const { error } = await supabase
+            .from('profiles')
+            .update({ plan: 'free', stripe_subscription_id: null })
+            .eq('id', userId);
+          if (error) throw new Error(`downgrade (status ${sub.status}) failed: ${error.message}`);
+          console.log('[stripe-webhook] status', sub.status, '→ free for', userId);
           break;
         }
+
         // Déduit le plan depuis le price du premier item.
         const priceId = sub.items.data[0]?.price?.id ?? '';
         const newPlan = priceToplan.get(priceId) ?? null;
-        if (newPlan) {
-          const { error } = await supabase
-            .from('profiles')
-            .update({ plan: newPlan })
-            .eq('id', userId);
-          if (error) console.error('[stripe-webhook] update plan failed', error);
-          else console.log('[stripe-webhook] plan updated to', newPlan, 'for', userId);
-        } else {
+        if (!newPlan) {
           console.warn('[stripe-webhook] unknown price_id', priceId, 'on sub', sub.id);
+          break; // 200 : price non mappé (secret manquant ?) — un retry ne changera rien
         }
+        const { error } = await supabase
+          .from('profiles')
+          .update({ plan: newPlan })
+          .eq('id', userId);
+        if (error) throw new Error(`update plan failed: ${error.message}`);
+        console.log('[stripe-webhook] plan updated to', newPlan, 'for', userId);
         break;
       }
 
@@ -134,8 +164,8 @@ Deno.serve(async (req) => {
             stripe_subscription_id: null,
           })
           .eq('id', userId);
-        if (error) console.error('[stripe-webhook] downgrade failed', error);
-        else console.log('[stripe-webhook] downgraded to free for', userId);
+        if (error) throw new Error(`downgrade failed: ${error.message}`);
+        console.log('[stripe-webhook] downgraded to free for', userId);
         break;
       }
 
@@ -143,11 +173,13 @@ Deno.serve(async (req) => {
         console.log('[stripe-webhook] unhandled event type', event.type);
     }
   } catch (e) {
+    // Erreur DB ou handler → 500 : Stripe retentera l'event (idempotent côté
+    // profiles, donc rejouer est sûr). C'est le comportement voulu #3.
     console.error('[stripe-webhook] handler error', e);
     return new Response('Internal error', { status: 500 });
   }
 
-  // Toujours répondre 200 à Stripe — sinon il retry.
+  // Succès (ou cas où un retry serait inutile, déjà loggés) → 200.
   return new Response(JSON.stringify({ received: true }), {
     status: 200,
     headers: { 'Content-Type': 'application/json' },
