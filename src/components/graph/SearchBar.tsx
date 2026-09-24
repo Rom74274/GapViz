@@ -52,7 +52,7 @@ export function SearchBar({ nodes, onChange, onSelect }: Props) {
   const top = matches?.slice(0, 8) ?? [];
 
   return (
-    <div className="absolute right-3 top-3 z-20 w-[260px]">
+    <div className="absolute left-1/2 top-3 z-20 w-[260px] -translate-x-1/2">
       {!open ? (
         <button
           type="button"

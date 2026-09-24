@@ -19,11 +19,11 @@ import {
   Wrench,
   CreditCard,
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useSettings } from '@/lib/store';
 import { clearAllClusterCache, getCacheStats } from '@/lib/clustering';
 import { useAuth } from '@/hooks/useAuth';
-import { signOut } from '@/lib/authStore';
+import { signOut, useAuthStore } from '@/lib/authStore';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import {
@@ -37,6 +37,21 @@ import { PLAN_LIMITS, PLAN_LABELS, shouldResetClusteringsCount } from '@/lib/pla
 import type { UserPlan } from '@/lib/supabaseTypes';
 
 const ADVANCED_OPEN_LS_KEY = 'stargap-settings-advanced-open';
+
+// Détermine si l'utilisateur est admin (Romain) via une liste d'emails en env
+// (VITE_ADMIN_EMAILS, séparés par des virgules). Les outils avancés (clé API
+// perso, choix du modèle, vidage du cache) ne sont exposés qu'aux admins — un
+// compte consommateur ne doit pas les voir.
+function isAdminEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  const raw = import.meta.env.VITE_ADMIN_EMAILS as string | undefined;
+  if (!raw) return false;
+  return raw
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean)
+    .includes(email.toLowerCase());
+}
 
 function useLocalStorageToggle(
   key: string,
@@ -64,6 +79,8 @@ function useLocalStorageToggle(
 
 export function SettingsPage() {
   const apiKey = useSettings((s) => s.apiKey);
+  const { user } = useAuth();
+  const isAdmin = isAdminEmail(user?.email);
   const [advancedOpen, setAdvancedOpen] = useLocalStorageToggle(
     ADVANCED_OPEN_LS_KEY,
     false,
@@ -90,18 +107,21 @@ export function SettingsPage() {
 
       <ClusteringModeSection
         hasOwnApiKey={Boolean(apiKey)}
-        onActivateBYOK={requestActivateBYOK}
+        onActivateBYOK={isAdmin ? requestActivateBYOK : undefined}
       />
 
       <MigrationSection />
 
       <OnboardingHelpSection />
 
-      <AdvancedSection open={advancedOpen} onToggle={() => setAdvancedOpen(!advancedOpen)}>
-        <BYOKSection />
-        <ModelSection />
-        <ClusterCacheSection />
-      </AdvancedSection>
+      {/* Options avancées (BYOK, choix du modèle, cache) : admin uniquement. */}
+      {isAdmin && (
+        <AdvancedSection open={advancedOpen} onToggle={() => setAdvancedOpen(!advancedOpen)}>
+          <BYOKSection />
+          <ModelSection />
+          <ClusterCacheSection />
+        </AdvancedSection>
+      )}
     </div>
   );
 }
@@ -269,7 +289,7 @@ function ClusteringModeSection({
   onActivateBYOK,
 }: {
   hasOwnApiKey: boolean;
-  onActivateBYOK: () => void;
+  onActivateBYOK?: () => void;
 }) {
   const { profile, status } = useAuth();
   if (status !== 'authenticated' || !profile) return null;
@@ -380,14 +400,16 @@ function ClusteringModeSection({
               Quota épuisé ce mois.
             </p>
             <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={onActivateBYOK}
-                className="inline-flex items-center gap-1 rounded-md border border-border-subtle px-2 py-1 text-[10px] text-text-secondary hover:border-border-strong hover:text-text-primary"
-              >
-                <Zap size={10} />
-                Activer BYOK
-              </button>
+              {onActivateBYOK && (
+                <button
+                  type="button"
+                  onClick={onActivateBYOK}
+                  className="inline-flex items-center gap-1 rounded-md border border-border-subtle px-2 py-1 text-[10px] text-text-secondary hover:border-border-strong hover:text-text-primary"
+                >
+                  <Zap size={10} />
+                  Activer BYOK
+                </button>
+              )}
               <Link
                 to="/pricing"
                 className="inline-flex items-center gap-1 rounded-md bg-accent px-2 py-1 text-[10px] font-medium text-white hover:bg-accent-hover"
@@ -584,11 +606,34 @@ function AccountSection() {
   const { user, profile, status } = useAuth();
   const [signingOut, setSigningOut] = useState(false);
   const [portalLoading, setPortalLoading] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [checkoutSuccess, setCheckoutSuccess] = useState(false);
+
+  // Retour de paiement Stripe : le plan est activé de façon ASYNCHRONE par le
+  // webhook (quelques secondes de latence). On affiche une confirmation et on
+  // refetch le profil en boucle courte pour que le nouveau plan apparaisse.
+  useEffect(() => {
+    if (searchParams.get('checkout') !== 'success') return;
+    setCheckoutSuccess(true);
+    let n = 0;
+    const iv = setInterval(() => {
+      void useAuthStore.getState().reloadProfile();
+      n += 1;
+      if (n >= 6) clearInterval(iv);
+    }, 2500);
+    const next = new URLSearchParams(searchParams);
+    next.delete('checkout');
+    setSearchParams(next, { replace: true });
+    return () => clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (status !== 'authenticated' || !user) return null;
 
   const planLabel = profile?.plan ?? 'free';
-  const hasSubscription = Boolean(profile?.stripe_customer_id);
+  // Basé sur l'abonnement ACTIF (pas le customer) : un ex-abonné repassé Free a
+  // stripe_customer_id mais plus de stripe_subscription_id → doit revoir "Upgrader".
+  const hasSubscription = Boolean(profile?.stripe_subscription_id);
   const planColor =
     planLabel === 'agency'
       ? 'bg-purple-500/15 text-purple-300 border-purple-500/40'
@@ -618,6 +663,15 @@ function AccountSection() {
 
   return (
     <section className="mt-8 space-y-4 rounded-lg border border-border-subtle bg-bg-surface p-5">
+      {checkoutSuccess && (
+        <div className="flex items-start gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2.5 text-xs text-emerald-300">
+          <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
+          <span>
+            Paiement confirmé, merci ! L'activation de ton plan se termine (quelques
+            secondes)… Le badge se met à jour automatiquement.
+          </span>
+        </div>
+      )}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3 min-w-0">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-bg-elevated text-text-secondary">

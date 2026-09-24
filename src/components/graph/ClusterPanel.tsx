@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ChevronDown, ChevronRight, AlertTriangle, Layers } from 'lucide-react';
+import { Layers, Info, X } from 'lucide-react';
 import { db } from '@/lib/db';
 import { cn } from '@/lib/utils';
 
@@ -19,32 +19,38 @@ interface ClusterStat {
   competitorKwCount: number;
   totalVolume: number;
   isMyCovered: boolean;
+  dotColor: string;
 }
+
+const OPP_DOT = '#FFD43B';
 
 export function ClusterPanel({ projectId, highlightedClusterId, onHighlight, onZoomToCluster }: Props) {
   const [open, setOpen] = useState(true);
+  const [legendOpen, setLegendOpen] = useState(true);
 
-  const stats = useLiveQuery(async (): Promise<ClusterStat[]> => {
+  const data = useLiveQuery(async () => {
     const [clusters, keywords, competitors] = await Promise.all([
       db.clusters.where('projectId').equals(projectId).toArray(),
       db.keywords.where('projectId').equals(projectId).toArray(),
       db.competitors.where('projectId').equals(projectId).toArray(),
     ]);
     const meDomains = new Set(competitors.filter((c) => c.isMe).map((c) => c.domain));
-    const byCluster = new Map<string, { kws: typeof keywords; mine: number }>();
+    const colorByDomain = new Map(competitors.map((c) => [c.domain, c.color]));
+
+    const byCluster = new Map<string, typeof keywords>();
     for (const k of keywords) {
       if (!k.clusterId) continue;
       const cur = byCluster.get(k.clusterId);
-      if (cur) cur.kws.push(k);
-      else byCluster.set(k.clusterId, { kws: [k], mine: 0 });
+      if (cur) cur.push(k);
+      else byCluster.set(k.clusterId, [k]);
     }
-    // Compte la couverture en dédupliquant les KWs par texte.
-    const out: ClusterStat[] = [];
+
+    const stats: ClusterStat[] = [];
     for (const c of clusters) {
-      const data = byCluster.get(c.id);
-      if (!data) continue;
+      const kws = byCluster.get(c.id);
+      if (!kws) continue;
       const kwToSources = new Map<string, Set<string>>();
-      for (const k of data.kws) {
+      for (const k of kws) {
         const key = k.keyword.trim().toLowerCase();
         const set = kwToSources.get(key) ?? new Set<string>();
         set.add(k.sourceDomain);
@@ -54,8 +60,12 @@ export function ClusterPanel({ projectId, highlightedClusterId, onHighlight, onZ
       let competitorKwCount = 0;
       let totalVolume = 0;
       const seen = new Set<string>();
-      for (const k of data.kws) {
+      const compDomainCount = new Map<string, number>();
+      for (const k of kws) {
         const key = k.keyword.trim().toLowerCase();
+        if (!meDomains.has(k.sourceDomain)) {
+          compDomainCount.set(k.sourceDomain, (compDomainCount.get(k.sourceDomain) ?? 0) + 1);
+        }
         if (seen.has(key)) continue;
         seen.add(key);
         const sources = kwToSources.get(key)!;
@@ -64,107 +74,179 @@ export function ClusterPanel({ projectId, highlightedClusterId, onHighlight, onZ
         else competitorKwCount++;
         totalVolume += k.volume;
       }
-      out.push({
+      const isMyCovered = myKwCount > 0;
+      // Couleur de pastille : jaune si opportunité (non couvert), sinon la
+      // couleur du concurrent dominant dans le cluster.
+      let dominantDomain = '';
+      let best = -1;
+      for (const [d, n] of compDomainCount) {
+        if (n > best) {
+          best = n;
+          dominantDomain = d;
+        }
+      }
+      const dotColor = isMyCovered
+        ? (colorByDomain.get(dominantDomain) ?? '#8b92aa')
+        : OPP_DOT;
+      stats.push({
         id: c.id,
         name: c.name,
         kwCount: myKwCount + competitorKwCount,
         myKwCount,
         competitorKwCount,
         totalVolume,
-        isMyCovered: myKwCount > 0,
+        isMyCovered,
+        dotColor,
       });
     }
-    // Tri : non couverts d'abord (par volume desc), puis couverts (par volume desc).
-    return out.sort((a, b) => {
+    stats.sort((a, b) => {
       if (a.isMyCovered !== b.isMyCovered) return a.isMyCovered ? 1 : -1;
       return b.totalVolume - a.totalVolume;
     });
+
+    const legend = competitors
+      .map((c) => ({ label: c.label, color: c.color, isMe: c.isMe }))
+      .sort((a, b) => (a.isMe === b.isMe ? a.label.localeCompare(b.label) : a.isMe ? -1 : 1));
+
+    return { stats, legend };
   }, [projectId]);
 
-  if (!stats || stats.length === 0) return null;
+  if (!data || data.stats.length === 0) return null;
+  const { stats, legend } = data;
 
-  const absent = stats.filter((s) => !s.isMyCovered);
-
-  return (
-    <aside className="absolute bottom-3 left-3 z-10 flex max-h-[60vh] w-[260px] flex-col rounded-lg border border-border-subtle bg-bg-surface/90 backdrop-blur">
+  // Replié : bouton carré « layers » en haut à gauche.
+  if (!open) {
+    return (
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center justify-between gap-2 rounded-t-lg px-3 py-2 text-left text-xs font-semibold text-text-primary hover:bg-bg-elevated"
+        onClick={() => setOpen(true)}
+        title="Afficher les clusters"
+        className="absolute left-4 top-4 z-20 flex h-10 w-10 items-center justify-center rounded-xl border border-white/[0.08] bg-[rgba(12,15,30,0.72)] text-[#9aa0d0] backdrop-blur-md transition-colors hover:bg-white/[0.06]"
       >
-        <span className="flex items-center gap-2">
-          <Layers size={12} className="text-text-secondary" />
-          Clusters
-          <span className="font-mono text-text-muted">({stats.length})</span>
-          {absent.length > 0 && (
-            <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300">
-              <AlertTriangle size={10} />
-              {absent.length} non couvert{absent.length > 1 ? 's' : ''}
-            </span>
-          )}
-        </span>
-        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <Layers size={16} />
       </button>
-      {open && (
-        <ul className="overflow-y-auto border-t border-border-subtle">
-          {stats.map((c) => {
-            const highlighted = highlightedClusterId === c.id;
-            return (
-              <li key={c.id}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (highlighted) {
-                      onHighlight(null);
-                    } else {
-                      onHighlight(c.id);
-                      onZoomToCluster?.(c.id);
-                    }
+    );
+  }
+
+  return (
+    <aside className="absolute bottom-4 left-4 top-4 z-20 flex w-[288px] flex-col overflow-hidden rounded-2xl border border-white/[0.07] bg-[rgba(12,15,30,0.72)] backdrop-blur-md">
+      {/* En-tête */}
+      <div className="flex shrink-0 items-center gap-2 px-4 pb-3 pt-3.5">
+        <Layers size={16} className="text-[#9aa0d0]" />
+        <span className="text-[14px] font-semibold text-[#e6e9f2]">Clusters</span>
+        <span className="font-mono text-[13px] text-[#6b7290]">{stats.length}</span>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          title="Masquer les clusters"
+          className="ml-auto flex h-6 w-6 items-center justify-center rounded-md text-text-muted hover:bg-white/[0.06] hover:text-text-primary"
+        >
+          <X size={15} />
+        </button>
+      </div>
+
+      {/* Liste */}
+      <ul className="min-h-0 flex-1 overflow-y-auto px-2 pb-2.5">
+        {stats.map((c) => {
+          const highlighted = highlightedClusterId === c.id;
+          return (
+            <li key={c.id}>
+              <button
+                type="button"
+                onMouseEnter={() => onHighlight(c.id)}
+                onMouseLeave={() => onHighlight(null)}
+                onClick={() => onZoomToCluster?.(c.id)}
+                className={cn(
+                  'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors',
+                  highlighted ? 'bg-white/[0.06]' : 'hover:bg-white/[0.05]',
+                )}
+              >
+                <span
+                  className="inline-block h-2 w-2 shrink-0 rounded-full"
+                  style={{
+                    backgroundColor: c.dotColor,
+                    boxShadow: c.isMyCovered ? undefined : `0 0 8px ${c.dotColor}`,
                   }}
-                  className={cn(
-                    'flex w-full items-start justify-between gap-2 border-b border-border-subtle/60 px-3 py-2 text-left transition-colors hover:bg-bg-elevated',
-                    highlighted && 'bg-bg-elevated',
-                    !c.isMyCovered && 'bg-amber-500/5',
-                  )}
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      {!c.isMyCovered && (
-                        <AlertTriangle size={10} className="shrink-0 text-amber-400" />
-                      )}
-                      <span
-                        className={cn(
-                          'truncate text-xs font-medium',
-                          c.isMyCovered ? 'text-text-primary' : 'text-amber-300',
-                        )}
-                      >
-                        {c.name}
-                      </span>
-                    </div>
-                    <p className="mt-0.5 font-mono text-[10px] text-text-muted">
-                      {c.isMyCovered ? (
-                        <>
-                          {c.myKwCount} à toi · {c.competitorKwCount} concurrents
-                        </>
-                      ) : (
-                        <span className="text-amber-300/80">
-                          Non couvert · {c.competitorKwCount} KWs concurrents
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <p className="font-mono text-[11px] text-text-secondary">
-                      {c.totalVolume.toLocaleString('fr-FR')}
-                    </p>
-                    <p className="text-[9px] text-text-muted">vol</p>
-                  </div>
-                </button>
+                />
+                <span className="min-w-0 flex-1">
+                  <span
+                    className={cn(
+                      'block truncate text-[13px] font-medium',
+                      c.isMyCovered ? 'text-[#dfe3ef]' : 'text-amber-300',
+                    )}
+                  >
+                    {c.name}
+                  </span>
+                  <span className="block truncate text-[11px] text-[#6b7290]">
+                    {c.myKwCount} à toi · {c.competitorKwCount} concurrents
+                  </span>
+                </span>
+                <span className="shrink-0 font-mono text-[12px] text-[#8b92aa]">
+                  {c.totalVolume.toLocaleString('fr-FR')}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+
+      {/* Légende */}
+      <div className="shrink-0 border-t border-white/[0.07] bg-white/[0.02]">
+        {legendOpen ? (
+          <div className="px-4 py-3">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-[#727a92]">
+                Légende
+              </span>
+              <button
+                type="button"
+                onClick={() => setLegendOpen(false)}
+                className="flex h-5 w-5 items-center justify-center rounded text-text-muted hover:bg-white/[0.06] hover:text-text-primary"
+                title="Masquer la légende"
+              >
+                <X size={13} />
+              </button>
+            </div>
+            <ul className="flex flex-col gap-1.5 text-[12px] text-[#c3c8db]">
+              {legend.map((l) => (
+                <li key={l.label} className="flex items-center gap-2">
+                  <span
+                    className="inline-block h-2.5 w-2.5 rounded-full"
+                    style={{
+                      backgroundColor: l.color,
+                      boxShadow: l.isMe ? `0 0 7px ${l.color}` : undefined,
+                    }}
+                  />
+                  <span className={cn('truncate', l.isMe && 'font-semibold')}>{l.label}</span>
+                </li>
+              ))}
+              <li className="flex items-center gap-2">
+                <span
+                  className="inline-block h-2.5 w-2.5 rounded-full"
+                  style={{ backgroundColor: OPP_DOT, boxShadow: `0 0 8px ${OPP_DOT}` }}
+                />
+                <span>glow = opportunité</span>
               </li>
-            );
-          })}
-        </ul>
-      )}
+              <li className="flex items-center gap-2">
+                <span
+                  className="inline-block h-2.5 w-2.5 rounded-full border-[1.5px] border-dashed"
+                  style={{ borderColor: OPP_DOT }}
+                />
+                <span>cluster non couvert</span>
+              </li>
+            </ul>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setLegendOpen(true)}
+            className="flex w-full items-center gap-2 px-4 py-2.5 text-[12px] text-[#8b92aa] hover:bg-white/[0.04] hover:text-text-secondary"
+          >
+            <Info size={14} />
+            Afficher la légende
+          </button>
+        )}
+      </div>
     </aside>
   );
 }

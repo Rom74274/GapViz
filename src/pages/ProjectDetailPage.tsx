@@ -13,6 +13,8 @@ import { ProjectStats } from '@/components/graph/ProjectStats';
 import { KeywordTable } from '@/components/graph/KeywordTable';
 import { KeywordDetailSidebar } from '@/components/graph/KeywordDetailSidebar';
 import { FilterBar } from '@/components/filters/FilterBar';
+import { FiltersPanel } from '@/components/filters/FiltersPanel';
+import { ExportButton } from '@/components/filters/ExportButton';
 import { useProjectGraph } from '@/lib/useProjectGraph';
 import { useProjectFilters } from '@/lib/filterStore';
 import { isKeywordVisible } from '@/lib/filterLogic';
@@ -35,6 +37,7 @@ export function ProjectDetailPage() {
     'idle' | 'syncing' | 'synced' | 'absent' | 'error'
   >('idle');
   const [addSiteOpen, setAddSiteOpen] = useState(false);
+  const [filtersPanelOpen, setFiltersPanelOpen] = useState(true);
   const graphRef = useRef<GraphCanvasHandle>(null);
 
   // Sync Supabase → Dexie en write-through au mount du projet. Tout
@@ -148,6 +151,12 @@ export function ProjectDetailPage() {
           <ViewToggle view={view} onChange={setView} />
           <RecoverUnclusteredButton projectId={projectId!} />
           <RunClusteringButton projectId={projectId!} variant="compact" />
+          <ExportButton
+            visibleKws={visibleKws}
+            projectName={project.name}
+            filters={filters}
+            selectedIds={selectedIds}
+          />
         </div>
       </header>
 
@@ -163,14 +172,17 @@ export function ProjectDetailPage() {
 
       <ProjectStats visibleKws={visibleKws} totalKws={allKws} />
 
-      <FilterBar
-        projectId={projectId!}
-        projectName={project.name}
-        visibleKws={visibleKws}
-        totalKwCount={allKws.length}
-        onZoomToCluster={zoomToCluster}
-        selectedIds={selectedIds}
-      />
+      {/* Vue tableau : barre de filtres horizontale. Vue graph : panneaux latéraux. */}
+      {view === 'table' && (
+        <FilterBar
+          projectId={projectId!}
+          projectName={project.name}
+          visibleKws={visibleKws}
+          totalKwCount={allKws.length}
+          onZoomToCluster={zoomToCluster}
+          selectedIds={selectedIds}
+        />
+      )}
 
       <div className="relative flex-1 overflow-hidden">
         {view === 'graph' ? (
@@ -189,6 +201,13 @@ export function ProjectDetailPage() {
               projectId={projectId!}
               highlightedClusterId={highlightedClusterId}
               onHighlight={setHighlightedClusterId}
+              onZoomToCluster={zoomToCluster}
+            />
+            <FiltersPanel
+              projectId={projectId!}
+              open={filtersPanelOpen}
+              onOpen={() => setFiltersPanelOpen(true)}
+              onClose={() => setFiltersPanelOpen(false)}
               onZoomToCluster={zoomToCluster}
             />
           </>

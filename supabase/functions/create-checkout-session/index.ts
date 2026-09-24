@@ -75,6 +75,18 @@ Deno.serve(async (req) => {
     let customerId: string | undefined =
       (profileQ.data?.stripe_customer_id as string | null) ?? undefined;
 
+    // Vérifie que le customer stocké existe TOUJOURS dans le compte/mode Stripe
+    // courant. Un ID périmé (créé en test puis passage en live, ou customer
+    // supprimé) provoquerait sinon un 500 "No such customer". On le recrée.
+    if (customerId) {
+      try {
+        const existing = await stripe.customers.retrieve(customerId);
+        if ((existing as Stripe.DeletedCustomer).deleted) customerId = undefined;
+      } catch {
+        customerId = undefined;
+      }
+    }
+
     if (!customerId) {
       const customer = await stripe.customers.create({
         email: user.email ?? (profileQ.data?.email as string | null) ?? undefined,

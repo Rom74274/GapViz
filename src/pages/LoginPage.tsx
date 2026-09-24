@@ -168,9 +168,26 @@ export function LoginPage() {
         </button>
 
         <p className="mt-5 text-center text-[10px] text-text-muted">
-          {tab === 'signin'
-            ? 'Pas encore de compte ? Bascule sur S\'inscrire ci-dessus.'
-            : 'En t\'inscrivant, tu acceptes l\'usage personnel / test de Star Gap.'}
+          {tab === 'signin' ? (
+            "Pas encore de compte ? Bascule sur S'inscrire ci-dessus."
+          ) : (
+            <>
+              En t'inscrivant, tu acceptes les{' '}
+              <a href="#/cgv" className="text-accent hover:text-accent-hover">CGV</a> et la{' '}
+              <a href="#/privacy" className="text-accent hover:text-accent-hover">
+                politique de confidentialité
+              </a>{' '}
+              de Star Gap.
+            </>
+          )}
+        </p>
+
+        <p className="mt-3 text-center text-[10px] text-text-muted">
+          <a href="#/legal" className="hover:text-text-secondary">Mentions légales</a>
+          {' · '}
+          <a href="#/privacy" className="hover:text-text-secondary">Confidentialité</a>
+          {' · '}
+          <a href="#/cgv" className="hover:text-text-secondary">CGV</a>
         </p>
       </div>
     </div>

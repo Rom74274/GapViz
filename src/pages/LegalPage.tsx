@@ -22,8 +22,9 @@ export function LegalPage() {
             Le site et l'application <strong>Star Gap</strong> sont édités par :
           </p>
           <ul className="mt-2 list-inside list-disc space-y-1">
-            <li>Romain Thomas, auto-entrepreneur</li>
-            <li>Adresse : 3 rue Mignard</li>
+            <li>Romain Thomas, entrepreneur individuel (micro-entreprise)</li>
+            <li>SIRET : 106 585 144 00012</li>
+            <li>Adresse : 3 rue Mignard, 75016 Paris</li>
             <li>Email : <a href="mailto:r.thomas74274@gmail.com" className="text-accent hover:text-accent-hover">r.thomas74274@gmail.com</a></li>
           </ul>
         </section>

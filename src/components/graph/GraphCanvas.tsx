@@ -2,6 +2,7 @@ import {
   forwardRef,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -68,10 +69,21 @@ interface DragState {
 }
 
 const FADE_IN_MS = 1200;
-const ABSENT_CLUSTER_COLOR = '#f59e0b';
 const OPACITY_LERP = 0.18;
-// Couleur neutre des liens (style épuré façon Obsidian).
-const LINK_COLOR = '#8a8fb0';
+// Design handoff : couleurs de données (à NE PAS unifier), glow opportunité.
+const OPP_COLOR = '#FFD43B';
+const CENTER_COLOR = '#4C9FFF';
+// Layout déterministe (phyllotaxie) — seed stable pour un rendu reproductible.
+const GRAPH_RNG_SEED = 20260724;
+function mulberry32(a: number): () => number {
+  return function () {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCanvas(
   { projectId, highlightedClusterId, onCountsChange, selectedKeywordId, onSelectKeyword },
@@ -84,6 +96,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
   const zoomRef = useRef<d3.ZoomBehavior<HTMLCanvasElement, unknown> | null>(null);
   const quadtreeRef = useRef<d3.Quadtree<GraphNode> | null>(null);
   const fadeStartRef = useRef<number>(performance.now());
+  const layoutSigRef = useRef<string>(''); // signature structurelle pour éviter le rejeu du fade
+  const prevPosRef = useRef<Map<string, { x: number; y: number; radius: number }>>(new Map()); // positions + rayon conservés entre rebuilds
   const particlesRef = useRef<Particle[]>([]);
   const opacityMapRef = useRef<Map<string, NodeOpacity>>(new Map());
   const simRef = useRef<d3.Simulation<GraphNode, undefined> | null>(null);
@@ -91,8 +105,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
 
   const [size, setSize] = useState({ width: 800, height: 600 });
   const [hover, setHover] = useState<HoverState | null>(null);
-  const [showLabels, setShowLabels] = useState(true);
-  const [showGlow, setShowGlow] = useState(true);
+  const showLabels = true; // labels de KW gérés séparément (voir drawKeywordLabels)
+  const showGlow = true; // glow des opportunités toujours actif
   const [searchMatchIds, setSearchMatchIds] = useState<Set<string> | null>(null);
 
   const { profile } = useAuth();
@@ -229,6 +243,10 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
     ctx.translate(t.x, t.y);
     ctx.scale(t.k, t.k);
 
+    const cn0 = graph.nodes.find((n) => n.kind === 'center');
+    if (cn0 && cn0.x != null && cn0.y != null) {
+      drawStars(ctx, cn0.x, cn0.y, size.width, size.height, fade);
+    }
     drawLinks(ctx, graph.links, fade, t.k, highlightedClusterId, opMap);
     drawNodesAndHalos(ctx, graph.nodes, {
       fade,
@@ -243,9 +261,11 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
     });
 
     drawClusterAndCenterLabels(ctx, graph.nodes, t.k, fade, opMap);
-    if (showLabels) {
-      drawKeywordLabels(ctx, graph.nodes, t, fade, opMap);
-    }
+    // Noms de mots-clés retirés du canvas (illisibles en masse) — le nom
+    // s'affiche via le tooltip au survol. `showLabels` est conservé pour le
+    // toggle mais ne rend plus les libellés de mots-clés.
+    void showLabels;
+    void drawKeywordLabels;
 
     ctx.restore();
   };
@@ -266,92 +286,60 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
     };
   }, []);
 
-  // ---------------------------------------------------------------- simulation
-  useEffect(() => {
+  // ---------------------------------------------------------------- layout
+  // Placement déterministe (phyllotaxie du handoff), pas de force-simulation :
+  // les positions sont fixes → rendu stable, pas de jitter.
+  // useLayoutEffect : s'exécute AVANT le repaint → les nœuds ont toujours une
+  // position quand le navigateur peint (plus de frame vide au re-render / drag).
+  useLayoutEffect(() => {
     if (!graph || size.width === 0) return;
-
-    fadeStartRef.current = performance.now();
-    placeInitialPositions(graph.nodes, size.width, size.height);
-
-    particlesRef.current = [];
-    graph.links.forEach((l, idx) => {
-      if (l.kind !== 'center-cluster') return;
-      particlesRef.current.push({ linkIdx: idx, t: Math.random(), speed: 0.00015, size: 1.6 });
-      particlesRef.current.push({ linkIdx: idx, t: Math.random(), speed: 0.00012, size: 1.2 });
-    });
-
-    // Rayon de l'anneau sur lequel se répartissent les clusters (layout circulaire).
-    const ringRadius = Math.min(size.width, size.height) * 0.34;
-
-    const sim = d3
-      .forceSimulation<GraphNode>(graph.nodes)
-      .alpha(1)
-      .alphaDecay(0.02);
-    simRef.current = sim;
-    sim
-      .force(
-        'link',
-        d3
-          .forceLink<GraphNode, GraphLink>(graph.links)
-          .id((d) => d.id)
-          .distance((l) => {
-            if (l.kind === 'center-cluster') return ringRadius;
-            if (l.kind === 'cluster-cluster') return 280;
-            if (l.kind === 'cluster-keyword') return 60;
-            return 50;
-          })
-          .strength((l) => {
-            // center-cluster faible : c'est forceRadial qui place les clusters sur l'anneau.
-            if (l.kind === 'center-cluster') return 0.12;
-            if (l.kind === 'cluster-cluster') return 0.05;
-            if (l.kind === 'cluster-keyword') return 0.5;
-            return 0.06;
-          }),
-      )
-      .force(
-        'charge',
-        d3
-          .forceManyBody<GraphNode>()
-          .strength((d) => (d.kind === 'center' ? -1400 : d.kind === 'cluster' ? -550 : -45))
-          .distanceMax(900),
-      )
-      .force(
-        'collide',
-        d3.forceCollide<GraphNode>().radius((d) => d.radius + 2).strength(0.85),
-      )
-      // Anneau : pousse les clusters sur un cercle de rayon constant autour du
-      // centre → rendu circulaire harmonisé. Les mots-clés (strength 0) restent
-      // en satellites de leur cluster via le lien cluster-keyword.
-      .force(
-        'radial',
-        d3
-          .forceRadial<GraphNode>(
-            (d) => (d.kind === 'cluster' ? ringRadius : 0),
-            size.width / 2,
-            size.height / 2,
-          )
-          .strength((d) => (d.kind === 'cluster' ? 0.45 : 0)),
-      );
-
-    sim.on('tick', () => {
-      const cn = graph.nodes.find((n) => n.kind === 'center');
-      if (cn) {
-        cn.fx = size.width / 2;
-        cn.fy = size.height / 2;
-        cn.x = cn.fx;
-        cn.y = cn.fy;
+    // Ne rejoue le fade-in que si la STRUCTURE change (projet/keywords), pas quand
+    // on ne fait que déplacer un cluster (sinon drag = « rechargement » visuel).
+    const sig = `${graph.nodes.length}:${graph.links.length}:${size.width}x${size.height}`;
+    const structureChanged = sig !== layoutSigRef.current;
+    if (structureChanged) {
+      // Vraie (re)construction du layout (projet/keywords/redimensionnement).
+      fadeStartRef.current = performance.now();
+      layoutSigRef.current = sig;
+      placeInitialPositions(graph.nodes, size.width, size.height);
+    } else {
+      // Simple mise à jour (ex. drag d'un cluster) : on RÉUTILISE les positions
+      // déjà calculées → pas de re-packing (donc pas de gel ni d'écran vide).
+      const prev = prevPosRef.current;
+      for (const n of graph.nodes) {
+        const p = prev.get(n.id);
+        if (!p) continue;
+        n.x = p.x;
+        n.y = p.y;
+        // Restaure aussi le rayon calculé par le layout : sinon le nœud
+        // fraîchement reconstruit garde le rayon (plus grand) de buildGraph
+        // → le hub de cluster grossit d'un coup au drag.
+        n.radius = p.radius;
+        if (n.kind !== 'keyword') {
+          n.fx = p.x;
+          n.fy = p.y;
+        }
       }
-      quadtreeRef.current = d3
-        .quadtree<GraphNode>()
-        .x((d) => d.x ?? 0)
-        .y((d) => d.y ?? 0)
-        .addAll(graph.nodes);
-    });
-
-    return () => {
-      sim.stop();
-      sim.on('tick', null);
-    };
+    }
+    // Sans force-simulation d3, personne ne résout les liens (id → nœud) : on le
+    // fait ici, sinon source/target restent des strings et aucune ligne ne se dessine.
+    const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+    for (const l of graph.links) {
+      if (typeof l.source === 'string') l.source = byId.get(l.source) ?? l.source;
+      if (typeof l.target === 'string') l.target = byId.get(l.target) ?? l.target;
+    }
+    quadtreeRef.current = d3
+      .quadtree<GraphNode>()
+      .x((d) => d.x ?? 0)
+      .y((d) => d.y ?? 0)
+      .addAll(graph.nodes);
+    simRef.current = null; // pas de simulation ; le drag est null-gardé
+    // Mémorise positions + rayon pour la prochaine reconstruction du graph.
+    const posMap = new Map<string, { x: number; y: number; radius: number }>();
+    for (const n of graph.nodes) {
+      if (n.x != null && n.y != null) posMap.set(n.id, { x: n.x, y: n.y, radius: n.radius });
+    }
+    prevPosRef.current = posMap;
   }, [graph, size.width, size.height]);
 
   // ---------------------------------------------------------------- particles loop
@@ -436,7 +424,9 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
       if (op && op.current < 0.2) return null;
       const dx = x - found.x;
       const dy = y - found.y;
-      if (dx * dx + dy * dy > found.radius * found.radius) return null;
+      // Hitbox = rayon dessiné (+ petite marge de confort), pas le rayon volume.
+      const hitR = nodeDisplayRadius(found) + 2.5;
+      if (dx * dx + dy * dy > hitR * hitR) return null;
       return found;
     };
 
@@ -521,6 +511,13 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
     const onDocUp = (e: MouseEvent) => {
       const drag = dragRef.current;
       if (drag) {
+        // Fige les positions actuelles (avec le déplacement) : le rebuild du graph
+        // les réutilisera au lieu de re-packer → pas d'écran vide, cluster pinné.
+        const posMap = new Map<string, { x: number; y: number; radius: number }>();
+        for (const n of graph.nodes) {
+          if (n.x != null && n.y != null) posMap.set(n.id, { x: n.x, y: n.y, radius: n.radius });
+        }
+        prevPosRef.current = posMap;
         // Persiste la position en Dexie (cluster reste pinned).
         if (drag.cluster.fx !== null && drag.cluster.fy !== null && drag.cluster.fx !== undefined) {
           const px = drag.cluster.fx;
@@ -608,7 +605,6 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
       <DotGrid />
       <canvas ref={canvasRef} className="block" style={{ cursor: 'grab' }} />
       {hover && <NodeTooltip hover={hover} />}
-      {graph && <Legend nodes={graph.nodes} />}
       {graph && (
         <SearchBar
           nodes={graph.nodes}
@@ -630,10 +626,6 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
         onZoomIn={() => programmaticZoom(1.5)}
         onZoomOut={() => programmaticZoom(1 / 1.5)}
         onReset={onReset}
-        showLabels={showLabels}
-        onToggleLabels={() => setShowLabels((v) => !v)}
-        showGlow={showGlow}
-        onToggleGlow={() => setShowGlow((v) => !v)}
       />
       {isLoading && (
         <Overlay>
@@ -671,9 +663,82 @@ function Overlay({ children }: { children: React.ReactNode }) {
 // Initial layout
 // ============================================================================
 
+// Rayon de dessin d'un mot-clé (proportionnel au volume). Source unique de
+// vérité, utilisée pour le rendu ET pour la résolution de collisions.
+function leafDrawRadius(n: KeywordNode): number {
+  return Math.max(1, Math.min(3.4, n.radius * 0.52));
+}
+
+// Rayon réellement dessiné à l'écran (≠ n.radius qui encode le volume brut).
+// Utilisé pour le hit-test du hover ET le cercle de survol → correspondance exacte.
+function nodeDisplayRadius(n: GraphNode): number {
+  if (n.kind === 'keyword') return leafDrawRadius(n);
+  if (n.kind === 'center') return 9;
+  return n.radius; // cluster : la sphère du hub
+}
+
+// Résolution de collisions : écarte physiquement tout couple de mots-clés qui
+// se chevauchent (en tenant compte de leur rayon réel). Grille spatiale →
+// quasi O(n) par itération, OK même pour un cluster de plusieurs milliers de KW.
+function resolveLeafCollisions(leaves: KeywordNode[]): void {
+  const N = leaves.length;
+  if (N < 2) return;
+  const R = leaves.map(leafDrawRadius);
+  const GAP = 1.4; // marge minimale entre deux bords de points
+  const cell = 9; // >= max(R)+max(R)+GAP → voisinage 3×3 suffisant
+  const iterations = N > 1200 ? 8 : 12;
+  for (let it = 0; it < iterations; it++) {
+    const grid = new Map<string, number[]>();
+    for (let i = 0; i < N; i++) {
+      const a = leaves[i]!;
+      const key = Math.floor((a.x ?? 0) / cell) + ',' + Math.floor((a.y ?? 0) / cell);
+      const arr = grid.get(key);
+      if (arr) arr.push(i);
+      else grid.set(key, [i]);
+    }
+    for (let i = 0; i < N; i++) {
+      const a = leaves[i]!;
+      const gx = Math.floor((a.x ?? 0) / cell);
+      const gy = Math.floor((a.y ?? 0) / cell);
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          const arr = grid.get(gx + dx + ',' + (gy + dy));
+          if (!arr) continue;
+          for (const j of arr) {
+            if (j <= i) continue;
+            const b = leaves[j]!;
+            const ddx = (b.x ?? 0) - (a.x ?? 0);
+            const ddy = (b.y ?? 0) - (a.y ?? 0);
+            const d = Math.hypot(ddx, ddy) || 0.01;
+            const min = R[i]! + R[j]! + GAP;
+            if (d < min) {
+              const p = (min - d) / 2;
+              const ux = ddx / d;
+              const uy = ddy / d;
+              a.x = (a.x ?? 0) - ux * p;
+              a.y = (a.y ?? 0) - uy * p;
+              b.x = (b.x ?? 0) + ux * p;
+              b.y = (b.y ?? 0) + uy * p;
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+// Layout phyllotaxie (design handoff) : hubs de clusters répartis sur un disque
+// (angle d'or → variété de tailles), mots-clés en feuilles rayonnant VERS
+// L'EXTÉRIEUR depuis leur hub. Déterministe (seed stable) → stable entre rendus.
 function placeInitialPositions(nodes: GraphNode[], width: number, height: number): void {
-  const cx = width / 2;
-  const cy = height / 2;
+  const rng = mulberry32(GRAPH_RNG_SEED);
+  // Centre du disque dans la zone libre entre les panneaux flottants.
+  const leftPad = 320, rightPad = 300, topPad = 40, botPad = 40;
+  const cx = (leftPad + (width - rightPad)) / 2;
+  const cy = (topPad + (height - botPad)) / 2;
+  const Rmax =
+    Math.min((width - rightPad - leftPad) / 2, (height - topPad - botPad) / 2) * 0.98;
+
   const center = nodes.find((n) => n.kind === 'center');
   if (center) {
     center.x = cx;
@@ -681,33 +746,157 @@ function placeInitialPositions(nodes: GraphNode[], width: number, height: number
     center.fx = cx;
     center.fy = cy;
   }
-  const clusterMetas = nodes.filter((n): n is ClusterMetaNode => n.kind === 'cluster');
-  const N = clusterMetas.length;
-  const orbit = Math.min(width, height) * 0.32;
-  const clusterPos = new Map<string, { x: number; y: number }>();
-  for (let i = 0; i < N; i++) {
-    const c = clusterMetas[i]!;
-    if (c.manualX !== null && c.manualX !== undefined && c.manualY !== null && c.manualY !== undefined) {
-      // Position manuelle : pin via fx/fy.
-      c.x = c.manualX;
-      c.y = c.manualY;
-      c.fx = c.manualX;
-      c.fy = c.manualY;
-    } else {
-      const angle = (i / N) * Math.PI * 2 - Math.PI / 2 + (Math.random() - 0.5) * 0.5;
-      c.x = cx + orbit * Math.cos(angle);
-      c.y = cy + orbit * Math.sin(angle);
-    }
-    clusterPos.set(c.id, { x: c.x, y: c.y });
-  }
+
+  // Mots-clés groupés par cluster.
+  const kwByCluster = new Map<string, KeywordNode[]>();
   for (const n of nodes) {
     if (n.kind !== 'keyword') continue;
-    const cp = clusterPos.get(`__cluster__:${n.clusterId}`);
-    if (!cp) continue;
-    const angle = Math.random() * Math.PI * 2;
-    const dist = 30 + Math.random() * 50;
-    n.x = cp.x + dist * Math.cos(angle);
-    n.y = cp.y + dist * Math.sin(angle);
+    const list = kwByCluster.get(n.clusterId) ?? [];
+    list.push(n);
+    kwByCluster.set(n.clusterId, list);
+  }
+
+  const clusterMetas = nodes.filter((n): n is ClusterMetaNode => n.kind === 'cluster');
+  // Un blob (bulle) par cluster ; rayon selon le nb de mots-clés.
+  const blobs = clusterMetas.map((c) => {
+    const cnt = (kwByCluster.get(c.clusterId) ?? []).length;
+    c.radius = Math.max(3, Math.min(12, 2.6 + Math.sqrt(cnt) * 0.32)); // sphère du hub
+    return {
+      c,
+      blobR: 8 + Math.sqrt(Math.max(1, cnt)) * 6,
+      x: cx + (rng() - 0.5) * 80,
+      y: cy + (rng() - 0.5) * 80,
+    };
+  });
+
+  // Packing par relaxation : gravité vers le centre + clairière centrale (Mon
+  // site) + répulsion entre bulles → clusters distincts, bien espacés, dans une
+  // silhouette globalement ronde (la gravité produit naturellement le cercle).
+  const CENTER_KEEP = 34; // dégagement de base autour de « Mon site »
+  const GAPB = 20; // écart de base (l'écart visuel est piloté par SPREAD plus bas)
+  for (let it = 0; it < 360; it++) {
+    for (const b of blobs) {
+      b.x += (cx - b.x) * 0.02;
+      b.y += (cy - b.y) * 0.02;
+    }
+    for (const b of blobs) {
+      const dx = b.x - cx;
+      const dy = b.y - cy;
+      const d = Math.hypot(dx, dy) || 0.01;
+      const min = CENTER_KEEP + b.blobR;
+      if (d < min) {
+        const p = min - d;
+        b.x += (dx / d) * p;
+        b.y += (dy / d) * p;
+      }
+    }
+    for (let i = 0; i < blobs.length; i++) {
+      for (let j = i + 1; j < blobs.length; j++) {
+        const a = blobs[i]!;
+        const b = blobs[j]!;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const d = Math.hypot(dx, dy) || 0.01;
+        const min = a.blobR + b.blobR + GAPB; // écart entre clusters
+        if (d < min) {
+          const p = (min - d) / 2;
+          const ux = dx / d;
+          const uy = dy / d;
+          a.x -= ux * p;
+          a.y -= uy * p;
+          b.x += ux * p;
+          b.y += uy * p;
+        }
+      }
+    }
+  }
+
+  // DÉCOUPLAGE intra / inter :
+  //  - `fitScale` fixe la densité DANS les clusters (inchangée, comme avant).
+  //  - `SPREAD` écarte les GROUPES entre eux, sans toucher à l'intérieur.
+  // Augmenter SPREAD = plus d'espace entre clusters (les KW ne bougent pas).
+  let packR = 1;
+  for (const b of blobs) packR = Math.max(packR, Math.hypot(b.x - cx, b.y - cy) + b.blobR);
+  const fitScale = Math.min(1.6, (Rmax * 0.98) / packR);
+  const SPREAD = 1.7; // écart entre groupes de clusters (1 = serré)
+  const CLEAR_RADIUS = 110; // rayon vide autour de « Mon site » (aucun cluster dedans)
+  const FINAL_GAP = 16; // écart mini entre bords de clusters (px finaux)
+
+  // Positions/tailles finales des clusters.
+  const fx = blobs.map((b) => cx + (b.x - cx) * fitScale * SPREAD);
+  const fy = blobs.map((b) => cy + (b.y - cy) * fitScale * SPREAD);
+  const fr = blobs.map((b) => b.blobR * fitScale);
+
+  // Relaxation finale : zone franche centrale + anti-chevauchement entre
+  // clusters résolus ENSEMBLE (repousser hors du centre ne recrée plus de
+  // collisions entre voisins).
+  for (let it = 0; it < 140; it++) {
+    for (let i = 0; i < blobs.length; i++) {
+      const dx = fx[i]! - cx;
+      const dy = fy[i]! - cy;
+      const d = Math.hypot(dx, dy) || 0.01;
+      const minD = CLEAR_RADIUS + fr[i]!;
+      if (d < minD) {
+        const p = minD - d;
+        fx[i] = fx[i]! + (dx / d) * p;
+        fy[i] = fy[i]! + (dy / d) * p;
+      }
+    }
+    for (let i = 0; i < blobs.length; i++) {
+      for (let j = i + 1; j < blobs.length; j++) {
+        const dx = fx[j]! - fx[i]!;
+        const dy = fy[j]! - fy[i]!;
+        const d = Math.hypot(dx, dy) || 0.01;
+        const min = fr[i]! + fr[j]! + FINAL_GAP;
+        if (d < min) {
+          const p = (min - d) / 2;
+          const ux = dx / d;
+          const uy = dy / d;
+          fx[i] = fx[i]! - ux * p;
+          fy[i] = fy[i]! - uy * p;
+          fx[j] = fx[j]! + ux * p;
+          fy[j] = fy[j]! + uy * p;
+        }
+      }
+    }
+  }
+
+  // Positions manuelles (cluster déplacé au drag) : elles priment sur le packing
+  // → le cluster reste où l'utilisateur l'a lâché, même après re-layout.
+  for (let k = 0; k < blobs.length; k++) {
+    const mx = blobs[k]!.c.manualX;
+    const my = blobs[k]!.c.manualY;
+    if (mx != null && my != null) {
+      fx[k] = mx;
+      fy[k] = my;
+    }
+  }
+
+  // Placement des feuilles autour des positions finales résolues.
+  for (let k = 0; k < blobs.length; k++) {
+    const b = blobs[k]!;
+    const bx = fx[k]!;
+    const by = fy[k]!;
+    b.c.x = bx;
+    b.c.y = by;
+    b.c.fx = bx;
+    b.c.fy = by;
+    // Feuilles en spirale de Fermat (tournesol). Densité IDENTIQUE pour tous les
+    // clusters : le pas radial est fixe (`SP`), donc l'aire occupée est
+    // proportionnelle au nombre de mots-clés (petit cluster = compact, gros =
+    // grand, même densité). Anneau partant du bord du hub pour ne pas le masquer.
+    const leavesList = kwByCluster.get(b.c.clusterId) ?? [];
+    const innerR = b.c.radius + 4;
+    const inner2 = innerR * innerR;
+    const SP = 6 * fitScale; // pas radial par mot-clé (densité constante)
+    leavesList.forEach((kw, i) => {
+      const rr = Math.sqrt(inner2 + SP * SP * (i + 0.5));
+      const a = i * 2.399963;
+      kw.x = bx + Math.cos(a) * rr;
+      kw.y = by + Math.sin(a) * rr;
+    });
+    // Règle anti-chevauchement : écarte tout couple de points qui se touchent.
+    resolveLeafCollisions(leavesList);
   }
 }
 
@@ -717,6 +906,30 @@ function placeInitialPositions(nodes: GraphNode[], width: number, height: number
 
 function getOp(map: Map<string, NodeOpacity>, id: string): number {
   return map.get(id)?.current ?? 1;
+}
+
+function drawStars(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  w: number,
+  h: number,
+  fade: number,
+): void {
+  const rng = mulberry32(GRAPH_RNG_SEED);
+  const maxR = Math.max(w, h) * 0.75;
+  ctx.fillStyle = '#cfd6ff';
+  for (let i = 0; i < 160; i++) {
+    const a = rng() * Math.PI * 2;
+    const r = rng() * maxR;
+    const x = cx + Math.cos(a) * r;
+    const y = cy + Math.sin(a) * r;
+    ctx.globalAlpha = (0.15 + rng() * 0.4) * fade;
+    ctx.beginPath();
+    ctx.arc(x, y, rng() * 0.9 + 0.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
 }
 
 function drawLinks(
@@ -743,25 +956,15 @@ function drawLinks(
         (t.kind === 'keyword' && (t as KeywordNode).clusterId === highlightedClusterId));
     const dim = highlightedClusterId && !involvesHighlight ? 0.25 : 1;
 
-    // Style épuré : liens gris neutres translucides (façon Obsidian), fins.
-    let baseOpacity: number;
-    let lineWidth: number;
-    if (l.kind === 'center-cluster') {
-      baseOpacity = 0.12;
-      lineWidth = 1;
-    } else if (l.kind === 'cluster-cluster') {
-      baseOpacity = Math.min(0.14, 0.05 + (l.weight ?? 1) * 0.02);
-      lineWidth = 0.8;
-    } else if (l.kind === 'cluster-keyword') {
-      baseOpacity = 0.1;
-      lineWidth = 0.7;
-    } else {
-      baseOpacity = 0.05;
-      lineWidth = 0.5;
-    }
+    // Lignes de vie : seul le lien centre → hub de cluster est visible. Les
+    // liens hub→mots-clés (toile) ne sont pas dessinés (illisibles en masse).
+    if (l.kind !== 'center-cluster') continue;
+    const baseOpacity = 0.34;
+    const lineWidth = 1.2;
+    const color = '#96a0dc';
 
     const finalAlpha = baseOpacity * fade * dim * linkOp;
-    ctx.strokeStyle = withAlpha(LINK_COLOR, finalAlpha);
+    ctx.strokeStyle = withAlpha(color, finalAlpha);
     ctx.lineWidth = lineWidth / Math.max(0.5, zoomK / 1.5);
     ctx.beginPath();
     ctx.moveTo(s.x, s.y);
@@ -794,10 +997,11 @@ function drawNodesAndHalos(
 ): void {
   if (s.showGlow) {
     for (const n of nodes) {
-      if (n.kind !== 'keyword' || !n.isGap) continue;
+      if (n.kind !== 'cluster') continue;
+      if ((n as ClusterMetaNode).isMyCovered) continue; // opportunité = cluster non couvert
       const op = getOp(s.opacities, n.id);
       if (op < 0.05) continue;
-      drawGapGlow(ctx, n, s.fade * op);
+      drawOppGlow(ctx, n, s.fade * op);
     }
   }
   for (const n of nodes) {
@@ -816,19 +1020,13 @@ function drawNodesAndHalos(
   }
 }
 
-function getDepthOpacity(radius: number): number {
-  const t = Math.max(0, Math.min(1, (radius - 2) / 22));
-  return 0.45 + 0.55 * t;
-}
-
-function drawGapGlow(ctx: CanvasRenderingContext2D, n: KeywordNode, alpha: number): void {
+// Glow jaune « opportunité » derrière un hub de cluster non couvert (handoff).
+function drawOppGlow(ctx: CanvasRenderingContext2D, n: GraphNode, alpha: number): void {
   if (n.x === undefined || n.y === undefined) return;
-  const inner = n.radius;
-  const outer = n.radius * 2.6 + 2;
-  const grad = ctx.createRadialGradient(n.x, n.y, inner, n.x, n.y, outer);
-  grad.addColorStop(0, withAlpha(n.primaryColor, 0.35 * alpha));
-  grad.addColorStop(0.55, withAlpha(n.primaryColor, 0.12 * alpha));
-  grad.addColorStop(1, withAlpha(n.primaryColor, 0));
+  const outer = n.radius * 5.5;
+  const grad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, outer);
+  grad.addColorStop(0, withAlpha(OPP_COLOR, 0.35 * alpha));
+  grad.addColorStop(1, withAlpha(OPP_COLOR, 0));
   ctx.fillStyle = grad;
   ctx.beginPath();
   ctx.arc(n.x, n.y, outer, 0, Math.PI * 2);
@@ -844,8 +1042,9 @@ function drawKeyword(
   const op = getOp(s.opacities, n.id);
   if (op < 0.05) return;
   const dim = s.highlightedClusterId && n.clusterId !== s.highlightedClusterId ? 0.3 : 1;
-  const baseAlpha = getDepthOpacity(n.radius) * s.fade * dim * op * searchDim(s, n.id);
-  const r = n.radius * (s.breathing - 0.005);
+  const baseAlpha = s.fade * dim * op * searchDim(s, n.id);
+  // Taille de la feuille proportionnelle au volume (n.radius encode le volume).
+  const r = leafDrawRadius(n);
   ctx.globalAlpha = baseAlpha;
   ctx.beginPath();
   ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
@@ -866,28 +1065,39 @@ function drawCluster(
   if (n.x === undefined || n.y === undefined) return;
   const op = getOp(s.opacities, n.id);
   if (op < 0.05) return;
-  const dim = s.highlightedClusterId && n.clusterId !== s.highlightedClusterId ? 0.4 : 1;
+  const dim = s.highlightedClusterId && n.clusterId !== s.highlightedClusterId ? 0.5 : 1;
   ctx.globalAlpha = s.fade * dim * op * searchDim(s, n.id);
-  const absent = !n.isMyCovered;
-  const r = n.radius * s.breathing;
+  const r = n.radius;
 
+  // Anneau tireté jaune si cluster non couvert (opportunité), sauf « Sans cluster ».
+  if (!n.isMyCovered && n.name !== 'Sans cluster') {
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = OPP_COLOR;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, r + 4, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Sphère dégradée. « Sans cluster » = gris neutre distinct (pas bleu-violet).
+  const grad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, r);
+  if (n.name === 'Sans cluster') {
+    grad.addColorStop(0, '#c7b39b');
+    grad.addColorStop(1, '#7a6a55');
+  } else {
+    grad.addColorStop(0, '#c3c8ea');
+    grad.addColorStop(1, '#7d84b8');
+  }
+  ctx.fillStyle = grad;
   ctx.beginPath();
   ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-  ctx.fillStyle = absent ? withAlpha(ABSENT_CLUSTER_COLOR, 0.12) : 'rgba(99, 102, 241, 0.32)';
   ctx.fill();
-
-  if (absent) {
-    ctx.setLineDash([5, 4]);
-    ctx.strokeStyle = withAlpha(ABSENT_CLUSTER_COLOR, 0.95);
-    ctx.lineWidth = 1.6;
-  } else {
-    ctx.strokeStyle = 'rgba(199, 200, 255, 0.85)';
-    ctx.lineWidth = 1.5;
-  }
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+  ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
   ctx.stroke();
-  ctx.setLineDash([]);
   ctx.globalAlpha = 1;
 }
 
@@ -898,24 +1108,24 @@ function drawCenter(
 ): void {
   if (n.x === undefined || n.y === undefined) return;
   ctx.globalAlpha = s.fade;
-  const r = n.radius * s.breathing;
+  const r = 9; // taille fixe (handoff) — le hub central ne doit pas dominer
 
-  // Halo léger statique pour marquer le centre sans surcharger (épuré).
-  const innerR = r * 2.2;
-  const grad = ctx.createRadialGradient(n.x, n.y, r, n.x, n.y, innerR);
-  grad.addColorStop(0, withAlpha(n.color, 0.18));
-  grad.addColorStop(1, withAlpha(n.color, 0));
+  // Halo bleu du centre « Mon site » (handoff).
+  const glowR = r * 6;
+  const grad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, glowR);
+  grad.addColorStop(0, withAlpha(CENTER_COLOR, 0.5));
+  grad.addColorStop(1, withAlpha(CENTER_COLOR, 0));
   ctx.fillStyle = grad;
   ctx.beginPath();
-  ctx.arc(n.x, n.y, innerR, 0, Math.PI * 2);
+  ctx.arc(n.x, n.y, glowR, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.beginPath();
   ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-  ctx.fillStyle = n.color;
+  ctx.fillStyle = CENTER_COLOR;
   ctx.fill();
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
-  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+  ctx.lineWidth = 1.6;
   ctx.stroke();
   ctx.globalAlpha = 1;
 }
@@ -928,7 +1138,7 @@ function drawOutline(
 ): void {
   if (n.x === undefined || n.y === undefined) return;
   ctx.beginPath();
-  ctx.arc(n.x, n.y, n.radius + 3, 0, Math.PI * 2);
+  ctx.arc(n.x, n.y, nodeDisplayRadius(n) + 2, 0, Math.PI * 2);
   ctx.strokeStyle = color;
   ctx.lineWidth = width;
   ctx.stroke();
@@ -941,31 +1151,22 @@ function drawClusterAndCenterLabels(
   fade: number,
   opacityMap: Map<string, NodeOpacity>,
 ): void {
+  // Style handoff : plus de labels de clusters (illisibles à cette densité —
+  // dispo dans le panneau Clusters + au survol). On ne garde que « Mon site ».
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  const baseSize = Math.max(11, Math.min(16, 13 / Math.max(0.6, zoomK)));
+  ctx.lineJoin = 'round';
+  const size = Math.max(11, Math.min(14, 12 / Math.max(0.6, zoomK)));
   for (const n of nodes) {
+    if (n.kind !== 'center') continue;
     if (n.x === undefined || n.y === undefined) continue;
-    const op = getOp(opacityMap, n.id);
-    if (op < 0.05) continue;
-    if (n.kind === 'cluster') {
-      const absent = !n.isMyCovered;
-      ctx.font = `${absent ? 600 : 500} ${baseSize}px "JetBrains Mono", ui-monospace, monospace`;
-      ctx.fillStyle = absent
-        ? withAlpha(ABSENT_CLUSTER_COLOR, 0.95 * fade * op)
-        : `rgba(255, 255, 255, ${0.92 * fade * op})`;
-      const labelText = absent ? `⚠ ${n.name}` : n.name;
-      ctx.fillText(labelText, n.x, n.y + n.radius + 8);
-      if (absent) {
-        ctx.font = `500 ${Math.max(9, baseSize - 3)}px "JetBrains Mono", ui-monospace, monospace`;
-        ctx.fillStyle = withAlpha(ABSENT_CLUSTER_COLOR, 0.7 * fade * op);
-        ctx.fillText('Absent', n.x, n.y + n.radius + 8 + baseSize + 2);
-      }
-    } else if (n.kind === 'center') {
-      ctx.font = `600 ${baseSize + 2}px Inter, system-ui, sans-serif`;
-      ctx.fillStyle = `rgba(255, 255, 255, ${fade})`;
-      ctx.fillText(n.label, n.x, n.y + n.radius + 10);
-    }
+    const a = fade * getOp(opacityMap, n.id);
+    ctx.font = `600 ${size}px Inter, system-ui, sans-serif`;
+    ctx.lineWidth = 3.4;
+    ctx.strokeStyle = `rgba(6, 8, 16, ${0.92 * a})`;
+    ctx.strokeText(n.label, n.x, n.y + 13);
+    ctx.fillStyle = `rgba(207, 224, 255, ${a})`;
+    ctx.fillText(n.label, n.x, n.y + 13);
   }
 }
 
@@ -977,8 +1178,8 @@ function drawKeywordLabels(
   opacityMap: Map<string, NodeOpacity>,
 ): void {
   const zoomK = transform.k;
-  // Apparition progressive : pas de label sous 0.9×, fade-in 0.9→1.4.
-  const baseOpacity = clamp((zoomK - 0.9) / 0.5, 0, 1);
+  // Labels de mots-clés seulement en zoom rapproché (>2×) — vue par défaut épurée.
+  const baseOpacity = clamp((zoomK - 2) / 0.6, 0, 1);
   if (baseOpacity <= 0) return;
 
   // Top N par cluster, agrandi avec le zoom.
@@ -1142,8 +1343,10 @@ function NodeTooltip({ hover }: { hover: HoverState }) {
 function KeywordTooltipBody({ node }: { node: KeywordNode }) {
   return (
     <>
+      <p className="text-[11px] font-medium uppercase tracking-wide text-text-muted">
+        {node.clusterName}
+      </p>
       <p className="font-semibold text-text-primary">{node.keyword}</p>
-      <p className="mt-1 text-text-muted">{node.clusterName}</p>
       <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-text-secondary">
         <span>vol {node.volume.toLocaleString('fr-FR')}</span>
         {node.kd !== null && <span>KD {node.kd}</span>}
@@ -1168,44 +1371,6 @@ function KeywordTooltipBody({ node }: { node: KeywordNode }) {
         <p className="mt-2 text-xs text-amber-300">⚡ Opportunité — non positionné</p>
       )}
     </>
-  );
-}
-
-function Legend({ nodes }: { nodes: GraphNode[] }) {
-  const sites = new Map<string, { color: string; label: string; isMe: boolean }>();
-  for (const n of nodes) {
-    if (n.kind !== 'keyword') continue;
-    for (const s of n.sources) {
-      if (!sites.has(s.domain)) sites.set(s.domain, { color: s.color, label: s.label, isMe: s.isMe });
-    }
-  }
-  if (sites.size === 0) return null;
-  return (
-    <div className="absolute right-3 top-16 z-10 flex flex-col gap-1 rounded-md border border-border-subtle bg-bg-surface/85 p-2 backdrop-blur">
-      {[...sites.values()]
-        .sort((a, b) => (a.isMe === b.isMe ? a.label.localeCompare(b.label) : a.isMe ? -1 : 1))
-        .map((s) => (
-          <div key={s.label} className="flex items-center gap-2 pr-2 text-xs">
-            <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: s.color }} />
-            <span className={s.isMe ? 'font-semibold text-text-primary' : 'text-text-secondary'}>
-              {s.label}
-            </span>
-          </div>
-        ))}
-      <div className="mt-1 flex flex-col gap-0.5 border-t border-border-subtle pt-1.5 text-[10px] text-text-muted">
-        <div className="flex items-center gap-2">
-          <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-400 shadow-[0_0_8px_3px_rgba(251,191,36,0.45)]" />
-          glow = opportunité
-        </div>
-        <div className="flex items-center gap-2">
-          <span
-            className="inline-block h-2.5 w-2.5 rounded-full border-[1.5px] border-dashed border-amber-400"
-            style={{ background: 'rgba(245, 158, 11, 0.12)' }}
-          />
-          cluster non couvert
-        </div>
-      </div>
-    </div>
   );
 }
 

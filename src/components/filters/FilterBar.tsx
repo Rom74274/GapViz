@@ -232,13 +232,56 @@ function FilterButton({
   icon,
   children,
   onClick,
+  variant = 'pill',
 }: {
   active: boolean;
   activeValue?: string;
   icon: React.ReactNode;
   children: React.ReactNode;
   onClick: () => void;
+  variant?: 'pill' | 'row';
 }) {
+  // Variante « row » : ligne de panneau latéral (handoff) — badge d'icône violet
+  // 28×28 + label + valeur active + chevron. Pleine largeur.
+  if (variant === 'row') {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={cn(
+          'flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors',
+          'hover:bg-white/[0.05]',
+        )}
+      >
+        <span
+          className={cn(
+            'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border',
+            active
+              ? 'border-[#8A6CFF]/60 bg-[#8A6CFF]/20 text-[#c6b4ff]'
+              : 'border-[#8A6CFF]/40 bg-[#8A6CFF]/12 text-[#ab9dff]',
+          )}
+          style={active ? undefined : { boxShadow: '0 0 10px rgba(123,97,255,.18)' }}
+        >
+          {icon}
+        </span>
+        <span
+          className={cn(
+            'flex-1 truncate text-[13px] font-medium',
+            active ? 'text-[#c6b4ff]' : 'text-text-secondary',
+          )}
+        >
+          {children}
+        </span>
+        {active && activeValue && (
+          <span className="rounded bg-[#8A6CFF]/25 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-[#c6b4ff]">
+            {activeValue}
+          </span>
+        )}
+        <ChevronDown size={14} className="shrink-0 text-text-muted opacity-70" />
+      </button>
+    );
+  }
+
   return (
     <button
       type="button"
@@ -267,19 +310,53 @@ function FilterButton({
 // SmallToggle — pour les filtres secondaires (KWs datés, Branded)
 // ============================================================================
 
-function SmallToggle({
+export function SmallToggle({
   icon,
   label,
   active,
   title,
   onClick,
+  variant,
 }: {
   icon: React.ReactNode;
   label: string;
   active: boolean;
   title?: string;
   onClick: () => void;
+  variant?: 'pill' | 'row';
 }) {
+  if (variant === 'row') {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        title={title}
+        className={cn(
+          'flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors',
+          active ? 'bg-[#8A6CFF]/12' : 'hover:bg-white/[0.05]',
+        )}
+      >
+        <span
+          className={cn(
+            'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border',
+            active
+              ? 'border-[#8A6CFF]/60 bg-[#8A6CFF]/20 text-[#c6b4ff]'
+              : 'border-white/10 bg-white/[0.03] text-text-muted',
+          )}
+        >
+          {icon}
+        </span>
+        <span
+          className={cn(
+            'flex-1 truncate text-[13px] font-medium',
+            active ? 'text-[#c6b4ff]' : 'text-[#8b92aa]',
+          )}
+        >
+          {label}
+        </span>
+      </button>
+    );
+  }
   return (
     <button
       type="button"
@@ -301,13 +378,48 @@ function SmallToggle({
 // Opportunités — HERO filter
 // ============================================================================
 
-function OpportunitiesToggle({
+export function OpportunitiesToggle({
   active,
   onClick,
+  variant,
 }: {
   active: boolean;
   onClick: () => void;
+  variant?: 'pill' | 'row';
 }) {
+  if (variant === 'row') {
+    // Ligne de panneau (handoff) : fond/texte ambre quand actif.
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        title="N'afficher que les mots-clés où tu n'es PAS positionné — la vraie opportunité"
+        className={cn(
+          'flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors',
+          active ? 'bg-amber-400/10' : 'hover:bg-white/[0.05]',
+        )}
+      >
+        <span
+          className={cn(
+            'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border',
+            active
+              ? 'border-amber-300/50 bg-amber-400/15 text-amber-300'
+              : 'border-amber-400/30 bg-amber-500/10 text-amber-300',
+          )}
+        >
+          <Star size={16} className={active ? 'fill-amber-300/80' : ''} />
+        </span>
+        <span
+          className={cn(
+            'flex-1 truncate text-[13px] font-medium',
+            active ? 'text-amber-300' : 'text-text-secondary',
+          )}
+        >
+          Opportunités
+        </span>
+      </button>
+    );
+  }
   return (
     <button
       type="button"
@@ -348,16 +460,18 @@ function formatRange(r: [number, number] | null, suffix = ''): string | undefine
 // Filtres individuels
 // ============================================================================
 
-function ConcurrentFilter({
+export function ConcurrentFilter({
   allDomains,
   competitors,
   value,
   onChange,
+  variant,
 }: {
   allDomains: string[];
   competitors: { id: string; domain: string; label: string; color: string; isMe: boolean }[];
   value: string[] | null;
   onChange: (v: string[] | null) => void;
+  variant?: 'pill' | 'row';
 }) {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -388,11 +502,14 @@ function ConcurrentFilter({
         setOpen(v);
         if (!v) setEditingId(null);
       }}
+      portal={variant === 'row'}
+      align={variant === 'row' ? 'right' : 'left'}
       trigger={
         <FilterButton
           active={active}
           activeValue={`${activeCount}/${total}`}
-          icon={<Users size={12} />}
+          icon={<Users size={variant === 'row' ? 16 : 12} />}
+          variant={variant}
           onClick={() => setOpen((v) => !v)}
         >
           Concurrents
@@ -491,16 +608,18 @@ function ConcurrentFilter({
   );
 }
 
-function VolumeFilter({
+export function VolumeFilter({
   maxVol,
   keywords,
   value,
   onChange,
+  variant,
 }: {
   maxVol: number;
   keywords: { volume: number }[];
   value: [number, number] | null;
   onChange: (v: [number, number] | null) => void;
+  variant?: 'pill' | 'row';
 }) {
   const [open, setOpen] = useState(false);
   const range: [number, number] = value ?? [0, maxVol];
@@ -516,11 +635,14 @@ function VolumeFilter({
     <Popover
       open={open}
       onOpenChange={setOpen}
+      portal={variant === 'row'}
+      align={variant === 'row' ? 'right' : 'left'}
       trigger={
         <FilterButton
           active={value !== null}
           activeValue={formatRange(value)}
-          icon={<TrendingUp size={12} />}
+          icon={<TrendingUp size={variant === 'row' ? 16 : 12} />}
+          variant={variant}
           onClick={() => setOpen((v) => !v)}
         >
           Volume
@@ -549,12 +671,14 @@ function VolumeFilter({
   );
 }
 
-function KDFilter({
+export function KDFilter({
   value,
   onChange,
+  variant,
 }: {
   value: [number, number] | null;
   onChange: (v: [number, number] | null) => void;
+  variant?: 'pill' | 'row';
 }) {
   const [open, setOpen] = useState(false);
   const range: [number, number] = value ?? [0, 100];
@@ -562,11 +686,14 @@ function KDFilter({
     <Popover
       open={open}
       onOpenChange={setOpen}
+      portal={variant === 'row'}
+      align={variant === 'row' ? 'right' : 'left'}
       trigger={
         <FilterButton
           active={value !== null}
           activeValue={value ? `${value[0]}–${value[1]}` : undefined}
-          icon={<Gauge size={12} />}
+          icon={<Gauge size={variant === 'row' ? 16 : 12} />}
+          variant={variant}
           onClick={() => setOpen((v) => !v)}
         >
           KD
@@ -594,12 +721,14 @@ function KDFilter({
   );
 }
 
-function IntentFilter({
+export function IntentFilter({
   value,
   onChange,
+  variant,
 }: {
   value: Intent[] | null;
   onChange: (v: Intent[] | null) => void;
+  variant?: 'pill' | 'row';
 }) {
   const [open, setOpen] = useState(false);
   const allIntents = INTENT_OPTIONS.map((o) => o.value);
@@ -614,11 +743,14 @@ function IntentFilter({
     <Popover
       open={open}
       onOpenChange={setOpen}
+      portal={variant === 'row'}
+      align={variant === 'row' ? 'right' : 'left'}
       trigger={
         <FilterButton
           active={value !== null}
           activeValue={value !== null ? `${value.length}/4` : undefined}
-          icon={<Tag size={12} />}
+          icon={<Tag size={variant === 'row' ? 16 : 12} />}
+          variant={variant}
           onClick={() => setOpen((v) => !v)}
         >
           Intent
@@ -654,7 +786,7 @@ function IntentFilter({
   );
 }
 
-function ClusterFilter({
+export function ClusterFilter({
   allClusterIds,
   clusters,
   keywords,
@@ -664,6 +796,7 @@ function ClusterFilter({
   onChange,
   onExcludedChange,
   onZoomToCluster,
+  variant,
 }: {
   allClusterIds: string[];
   clusters: { id: string; name: string }[];
@@ -674,6 +807,7 @@ function ClusterFilter({
   onChange: (v: string[] | null) => void;
   onExcludedChange: (v: string[]) => void;
   onZoomToCluster?: (id: string) => void;
+  variant?: 'pill' | 'row';
 }) {
   const [open, setOpen] = useState(false);
   const meDomains = new Set(competitors.filter((c) => c.isMe).map((c) => c.domain));
@@ -724,11 +858,14 @@ function ClusterFilter({
       open={open}
       onOpenChange={setOpen}
       className="w-[320px]"
+      portal={variant === 'row'}
+      align={variant === 'row' ? 'right' : 'left'}
       trigger={
         <FilterButton
           active={isActive}
           activeValue={activeValue}
-          icon={<LayoutGrid size={12} />}
+          icon={<LayoutGrid size={variant === 'row' ? 16 : 12} />}
+          variant={variant}
           onClick={() => setOpen((v) => !v)}
         >
           Clusters
@@ -839,12 +976,14 @@ function ClusterFilter({
   );
 }
 
-function PositionFilter({
+export function PositionFilter({
   value,
   onChange,
+  variant,
 }: {
   value: [number, number] | null;
   onChange: (v: [number, number] | null) => void;
+  variant?: 'pill' | 'row';
 }) {
   const [open, setOpen] = useState(false);
   const range: [number, number] = value ?? [1, 100];
@@ -852,11 +991,14 @@ function PositionFilter({
     <Popover
       open={open}
       onOpenChange={setOpen}
+      portal={variant === 'row'}
+      align={variant === 'row' ? 'right' : 'left'}
       trigger={
         <FilterButton
           active={value !== null}
           activeValue={value ? `${value[0]}–${value[1]}` : undefined}
-          icon={<Hash size={12} />}
+          icon={<Hash size={variant === 'row' ? 16 : 12} />}
+          variant={variant}
           onClick={() => setOpen((v) => !v)}
         >
           Position

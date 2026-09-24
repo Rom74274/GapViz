@@ -39,9 +39,7 @@
     },
     {
       "matches": [
-        "*://app.stargap.app/*",
-        "*://localhost/*",
-        "*://127.0.0.1/*"
+        "*://app.stargap.app/*"
       ],
       "js": ["stargap-content.js"],
       "run_at": "document_start"

@@ -167,9 +167,19 @@ export function PrivacyPage() {
             </li>
           </ul>
           <p className="mt-2">
-            Aucun cookie de suivi, d'analyse ou publicitaire n'est utilisé.
-            Aucun outil de tracking tiers (Google Analytics, Meta Pixel, etc.)
-            n'est intégré.
+            <strong>Application (espace authentifié)</strong> : aucun cookie de suivi,
+            d'analyse ou publicitaire. Aucun outil de tracking tiers (Google Analytics,
+            Meta Pixel, etc.) n'y est intégré.
+          </p>
+          <p className="mt-2">
+            <strong>Site vitrine (landing page stargap.app)</strong> : utilise{' '}
+            <strong>Google Analytics 4</strong> (Google Ireland Ltd / Google LLC) à des
+            fins de mesure d'audience. Ces cookies analytics ne sont déposés
+            qu'<strong>après votre consentement</strong>, recueilli via la bannière
+            cookies (Consent Mode, adresse IP anonymisée). Vous pouvez refuser, ou
+            retirer votre consentement à tout moment via le lien « Gérer les cookies ».
+            Google peut agir comme destinataire hors UE, transfert encadré par les
+            Clauses Contractuelles Types et le Data Privacy Framework.
           </p>
         </section>
 

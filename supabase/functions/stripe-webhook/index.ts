@@ -27,7 +27,28 @@
 // =============================================================================
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@17';
+
+// Résout l'ID utilisateur Supabase : d'abord via la metadata de l'objet Stripe,
+// sinon (abo créé hors checkout, opération manuelle Stripe) via le
+// stripe_customer_id stocké sur profiles. Rend le webhook robuste aux cas où la
+// metadata supabase_user_id est absente.
+async function resolveUserId(
+  supabase: SupabaseClient,
+  metaUserId: string | undefined | null,
+  customer: string | Stripe.Customer | Stripe.DeletedCustomer | null,
+): Promise<string | null> {
+  if (metaUserId) return metaUserId;
+  const customerId = typeof customer === 'string' ? customer : customer?.id;
+  if (!customerId) return null;
+  const { data } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('stripe_customer_id', customerId)
+    .maybeSingle();
+  return (data as { id: string } | null)?.id ?? null;
+}
 
 Deno.serve(async (req) => {
   if (req.method !== 'POST') {
@@ -111,10 +132,10 @@ Deno.serve(async (req) => {
       // =====================================================================
       case 'customer.subscription.updated': {
         const sub = event.data.object as Stripe.Subscription;
-        const userId = sub.metadata?.supabase_user_id;
+        const userId = await resolveUserId(supabase, sub.metadata?.supabase_user_id, sub.customer);
         if (!userId) {
-          console.warn('[stripe-webhook] no supabase_user_id in sub metadata', sub.id);
-          break; // 200 : un retry ne réparera pas des metadata absentes
+          console.warn('[stripe-webhook] cannot resolve user for sub', sub.id);
+          break; // 200 : ni metadata ni customer connu — un retry ne réparera rien
         }
 
         // Statut de l'abonnement : un abo suspendu ne doit pas garder un plan payant.
@@ -152,9 +173,9 @@ Deno.serve(async (req) => {
       // =====================================================================
       case 'customer.subscription.deleted': {
         const sub = event.data.object as Stripe.Subscription;
-        const userId = sub.metadata?.supabase_user_id;
+        const userId = await resolveUserId(supabase, sub.metadata?.supabase_user_id, sub.customer);
         if (!userId) {
-          console.warn('[stripe-webhook] no supabase_user_id in sub metadata', sub.id);
+          console.warn('[stripe-webhook] cannot resolve user for deleted sub', sub.id);
           break;
         }
         const { error } = await supabase
@@ -166,6 +187,25 @@ Deno.serve(async (req) => {
           .eq('id', userId);
         if (error) throw new Error(`downgrade failed: ${error.message}`);
         console.log('[stripe-webhook] downgraded to free for', userId);
+        break;
+      }
+
+      // =====================================================================
+      // Échec de prélèvement (CB refusée, etc.). Stripe bascule ensuite l'abo en
+      // past_due puis unpaid/canceled (géré par subscription.updated). Ici on
+      // trace l'échec pour observabilité / future relance email (dunning).
+      // =====================================================================
+      case 'invoice.payment_failed': {
+        const invoice = event.data.object as Stripe.Invoice;
+        const userId = await resolveUserId(supabase, undefined, invoice.customer);
+        console.warn(
+          '[stripe-webhook] invoice.payment_failed',
+          'user:', userId ?? 'unknown',
+          'invoice:', invoice.id,
+          'attempt:', invoice.attempt_count,
+          'next_attempt:', invoice.next_payment_attempt,
+        );
+        // TODO(relance): envoyer un email au client (infra email à brancher).
         break;
       }
 
