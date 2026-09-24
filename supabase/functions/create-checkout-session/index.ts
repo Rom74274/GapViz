@@ -103,6 +103,10 @@ Deno.serve(async (req) => {
     // 5) Checkout Session.
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
+      // Permet de saisir un code promo au checkout (ex. coupon -100% pour tester
+      // le flow en live sans payer). Inoffensif à garder : sans code actif, rien
+      // ne change. C'est le COUPON côté Stripe qu'il faut désactiver après le test.
+      allow_promotion_codes: true,
       customer: customerId,
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${appUrl}/#/settings?checkout=success`,
