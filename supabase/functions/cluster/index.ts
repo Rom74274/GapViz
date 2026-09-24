@@ -43,8 +43,8 @@ const PLAN_MODELS: Record<string, string> = {
 
 const PLAN_QUOTAS: Record<string, number | null> = {
   free: 2,
-  pro: 20,
-  agency: null,
+  pro: 10,
+  agency: 30, // managé plafonné (borne le coût API) ; illimité via BYOK
 };
 
 const CHUNK_THRESHOLD = 500;

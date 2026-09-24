@@ -19,15 +19,15 @@ type BillingPeriod = 'monthly' | 'annual';
 
 const PLAN_PRICE_MONTHLY: Record<UserPlan, number> = {
   free: 0,
-  pro: 19,
-  agency: 79,
+  pro: 5,
+  agency: 15,
 };
 
-// -20% sur l'annuel, arrondi au centime.
+// Équivalent mensuel du prix annuel réel (Stripe : 49€/an Pro, 145€/an Agency).
 const PLAN_PRICE_ANNUAL_MONTHLY: Record<UserPlan, number> = {
   free: 0,
-  pro: Math.round(19 * 0.8 * 100) / 100, // 15.20
-  agency: Math.round(79 * 0.8 * 100) / 100, // 63.20
+  pro: Math.round((49 / 12) * 100) / 100, // 4.08
+  agency: Math.round((145 / 12) * 100) / 100, // 12.08
 };
 
 function formatPrice(plan: UserPlan, period: BillingPeriod): string {
@@ -134,13 +134,12 @@ export function PricingPage() {
                 </p>
                 {plan !== 'free' && billing === 'annual' && (
                   <p className="mt-1 text-xs text-green-400">
-                    -20% · Facturé{' '}
-                    {plan === 'pro' ? '182,40' : '758,40'}€/an
+                    Facturé {plan === 'pro' ? '49' : '145'}€/an
                   </p>
                 )}
                 {plan !== 'free' && billing === 'monthly' && (
                   <p className="mt-1 text-xs text-text-muted">
-                    ou {formatPrice(plan, 'annual')}/mois en annuel (-20%)
+                    ou {formatPrice(plan, 'annual')}/mois en annuel
                   </p>
                 )}
               </div>
@@ -277,7 +276,7 @@ function BillingToggle({
       >
         Annuel
         <span className="ml-1.5 rounded-full bg-green-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-green-400">
-          -20%
+          ~2 mois offerts
         </span>
       </button>
     </div>

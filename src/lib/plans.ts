@@ -35,7 +35,7 @@ export const PLAN_LIMITS: Record<UserPlan, PlanLimits> = {
     maxProjects: 5,
     maxKeywordsPerProject: 5_000,
     maxCompetitorsPerProject: 10,
-    maxClusteringsPerMonth: 20,
+    maxClusteringsPerMonth: 10,
     tableRowsVisible: null,
     csvExport: true,
     watermark: false,
@@ -45,7 +45,7 @@ export const PLAN_LIMITS: Record<UserPlan, PlanLimits> = {
     maxProjects: null,
     maxKeywordsPerProject: null,
     maxCompetitorsPerProject: null,
-    maxClusteringsPerMonth: null,
+    maxClusteringsPerMonth: 30, // managé plafonné (borne le coût API) ; illimité via BYOK
     tableRowsVisible: null,
     csvExport: true,
     watermark: false,

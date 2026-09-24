@@ -56,13 +56,13 @@ export function CgvPage() {
               </tr>
               <tr>
                 <td className="py-2 pr-4 font-medium text-text-primary">Pro</td>
-                <td className="py-2 pr-4">19 €/mois TTC</td>
-                <td className="py-2">5 projets, 5 000 KWs/projet, 10 concurrents, 20 clusterings managés/mois, export CSV, vue tableau complète</td>
+                <td className="py-2 pr-4">5 €/mois TTC</td>
+                <td className="py-2">5 projets, 5 000 KWs/projet, 10 concurrents, 10 clusterings managés/mois (illimité avec ta propre clé Claude), export CSV, vue tableau complète</td>
               </tr>
               <tr>
                 <td className="py-2 pr-4 font-medium text-text-primary">Agency</td>
-                <td className="py-2 pr-4">79 €/mois TTC</td>
-                <td className="py-2">Projets illimités, KWs illimités, concurrents illimités, clusterings illimités, export CSV, vue tableau complète</td>
+                <td className="py-2 pr-4">15 €/mois TTC</td>
+                <td className="py-2">Projets illimités, KWs illimités, concurrents illimités, 30 clusterings managés/mois (illimité avec ta propre clé Claude), export CSV, vue tableau complète</td>
               </tr>
             </tbody>
           </table>
