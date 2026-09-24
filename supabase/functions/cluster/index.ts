@@ -101,7 +101,7 @@ Deno.serve(async (req) => {
     // 3) Profile + gate + rolling reset.
     const profileQ = await supabase
       .from('profiles')
-      .select('plan, clusterings_used, clusterings_reset_at')
+      .select('plan')
       .eq('id', user.id)
       .maybeSingle();
     if (profileQ.error || !profileQ.data) {
@@ -114,27 +114,16 @@ Deno.serve(async (req) => {
     const model = PLAN_MODELS[plan] ?? PLAN_MODELS.free;
     const quota = PLAN_QUOTAS[plan] ?? null;
 
-    let currentUsed: number = (profileQ.data.clusterings_used as number | null) ?? 0;
-    let resetAt: string =
-      (profileQ.data.clusterings_reset_at as string | null) ?? new Date().toISOString();
-    const stale = Date.now() - new Date(resetAt).getTime() >= RESET_WINDOW_MS;
-    if (stale) {
-      currentUsed = 0;
-      resetAt = new Date().toISOString();
-    }
-
-    if (quota !== null && currentUsed >= quota) {
-      return jsonResponse(
-        {
-          error: 'quota_exceeded',
-          message: `Quota mensuel atteint (${currentUsed}/${quota}).`,
-          used: currentUsed,
-          limit: quota,
-          plan,
-        },
-        429,
-      );
-    }
+    // Le check + increment du quota est fait de façon ATOMIQUE plus bas (juste
+    // avant l'appel Claude) via la fonction SQL consume_clustering_quota.
+    let reserved = false;
+    let usedAfter = 0;
+    const refundQuota = async () => {
+      if (!reserved) return;
+      const r = await supabase.rpc('refund_clustering_quota', { p_user_id: user.id });
+      if (r.error) console.error('[cluster] refund failed', r.error);
+      reserved = false;
+    };
 
     // 4) Fetch keywords (RLS filtre via user_id du projet).
     const kwQ = await supabase
@@ -157,32 +146,58 @@ Deno.serve(async (req) => {
     }
     const sorted = [...keywords].sort((a, b) => (b.volume ?? 0) - (a.volume ?? 0));
 
-    // 5) Claude.
-    const anthropic = new Anthropic({ apiKey: anthropicKey });
-    const clusterRun = await runClustering(anthropic, model, sorted);
+    // 5) Réservation ATOMIQUE d'un slot de quota (anti-abus concurrence) AVANT
+    // l'appel Claude — verrou de ligne côté SQL. Remboursée si échec plus bas.
+    const reserve = await supabase.rpc('consume_clustering_quota', {
+      p_user_id: user.id,
+      p_quota: quota,
+      p_window_seconds: Math.round(RESET_WINDOW_MS / 1000),
+    });
+    if (reserve.error) {
+      return jsonResponse({ error: 'quota_check_failed', message: reserve.error.message }, 500);
+    }
+    const reservation = (reserve.data as Array<{ allowed: boolean; used: number }> | null)?.[0];
+    if (!reservation?.allowed) {
+      return jsonResponse(
+        {
+          error: 'quota_exceeded',
+          message: `Quota mensuel atteint (${reservation?.used ?? quota}/${quota}).`,
+          used: reservation?.used ?? quota,
+          limit: quota,
+          plan,
+        },
+        429,
+      );
+    }
+    reserved = true;
+    usedAfter = reservation.used;
+
+    // 6) Claude — rembourse le slot en cas d'échec.
+    let clusterRun;
+    try {
+      const anthropic = new Anthropic({ apiKey: anthropicKey });
+      clusterRun = await runClustering(anthropic, model, sorted);
+    } catch (e) {
+      await refundQuota();
+      throw e;
+    }
     const { assignments, unmatched, totalChunks, inputTokens, outputTokens } = clusterRun;
 
     if (assignments.length === 0) {
+      await refundQuota();
       return jsonResponse(
         { error: 'no_clusters', message: "Claude n'a retourné aucun cluster valide" },
         502,
       );
     }
 
-    // 6) Save clusters.
-    const saveResult = await saveClusters(supabase, projectId, assignments, unmatched);
-
-    // 7) Increment compteur.
-    const updateProfile = await supabase
-      .from('profiles')
-      .update({
-        clusterings_used: currentUsed + 1,
-        clusterings_reset_at: resetAt,
-      })
-      .eq('id', user.id);
-    if (updateProfile.error) {
-      // Non-bloquant : on a déjà fait le clustering. On log seulement.
-      console.error('[cluster] increment failed', updateProfile.error);
+    // 7) Save clusters — rembourse le slot en cas d'échec.
+    let saveResult;
+    try {
+      saveResult = await saveClusters(supabase, projectId, assignments, unmatched);
+    } catch (e) {
+      await refundQuota();
+      throw e;
     }
 
     return jsonResponse({
@@ -195,7 +210,7 @@ Deno.serve(async (req) => {
       totalChunks,
       model,
       usage: { inputTokens, outputTokens },
-      clusteringsUsed: currentUsed + 1,
+      clusteringsUsed: usedAfter,
       clusteringsLimit: quota,
     });
   } catch (e) {
