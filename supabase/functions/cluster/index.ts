@@ -383,7 +383,6 @@ async function callClaude(
     .stream({
       model,
       max_tokens: MAX_TOKENS,
-      temperature: 0.3,
       system: systemPrompt,
       messages: [{ role: 'user', content: userMessage }],
     })
