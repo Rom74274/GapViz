@@ -55,9 +55,9 @@ Deno.serve(async (req) => {
     return new Response('Method Not Allowed', { status: 405 });
   }
 
-  const stripeKey = Deno.env.get('STRIPE_SECRET_KEY')!;
-  const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET')!;
-  const serviceRoleKey = Deno.env.get('SB_SERVICE_ROLE_KEY')!;
+  const stripeKey = Deno.env.get('STRIPE_SECRET_KEY')?.trim();
+  const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET')?.trim();
+  const serviceRoleKey = Deno.env.get('SB_SERVICE_ROLE_KEY')?.trim();
   if (!stripeKey || !webhookSecret || !serviceRoleKey) {
     console.error('[stripe-webhook] missing secrets');
     return new Response('Server misconfigured', { status: 500 });
@@ -96,7 +96,9 @@ Deno.serve(async (req) => {
     ['STRIPE_PRICE_AGENCY', 'agency'],
     ['STRIPE_PRICE_AGENCY_ANNUAL', 'agency'],
   ] as const) {
-    const id = Deno.env.get(envName);
+    // .trim() défensif : un secret collé avec un "\n" parasite casserait le
+    // mapping price→plan (le plan ne s'activerait jamais).
+    const id = Deno.env.get(envName)?.trim();
     if (id) priceToplan.set(id, plan);
   }
 

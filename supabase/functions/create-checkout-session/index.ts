@@ -55,11 +55,12 @@ Deno.serve(async (req) => {
       return json({ error: 'plan must be "pro"|"agency", billing "monthly"|"annual"' }, 400);
     }
 
-    // 3) Env.
-    const stripeKey = Deno.env.get('STRIPE_SECRET_KEY');
+    // 3) Env. .trim() défensif : un secret collé avec un espace/retour à la ligne
+    // parasite (ex. "price_xxx\n") ferait échouer Stripe ("No such price").
+    const stripeKey = Deno.env.get('STRIPE_SECRET_KEY')?.trim();
     const priceSecretName = PRICE_SECRET_MAP[billing]![requestedPlan]!;
-    const priceId = Deno.env.get(priceSecretName);
-    const appUrl = Deno.env.get('APP_URL');
+    const priceId = Deno.env.get(priceSecretName)?.trim();
+    const appUrl = Deno.env.get('APP_URL')?.trim();
     if (!stripeKey || !priceId || !appUrl) {
       return json({ error: `Stripe secret "${priceSecretName}" not configured` }, 500);
     }
