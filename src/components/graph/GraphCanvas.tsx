@@ -1060,18 +1060,11 @@ function drawNodesAndHalos(
   nodes: GraphNode[],
   s: NodeRenderState,
 ): void {
-  if (s.showGlow) {
-    for (const n of nodes) {
-      if (n.kind !== 'cluster') continue;
-      if ((n as ClusterMetaNode).isMyCovered) continue; // opportunité = cluster non couvert
-      const op = getOp(s.opacities, n.id);
-      if (op < 0.05) continue;
-      drawOppGlow(ctx, n, s.fade * op);
-    }
-  }
-  // Filtre « Opportunités » actif : les VRAIES opportunités (top des gaps par
-  // score, cf. computeOpportunityGlow) sont mises en lumière directement sur le
-  // POINT lui-même (couleur ambrée + liseré clair), voir drawKeyword.
+  // Plus AUCUN halo/glow diffus (ni autour des clusters, ni des points). Le
+  // signal « opportunité » est porté uniquement par le POINT lui-même, qui
+  // devient jaune ambré + liseré clair quand c'est une vraie opportunité
+  // (top des gaps par score, cf. computeOpportunityGlow) — voir drawKeyword.
+  void s.showGlow;
   for (const n of nodes) {
     if (n.kind === 'keyword') drawKeyword(ctx, n, s);
   }
@@ -1086,19 +1079,6 @@ function drawNodesAndHalos(
     if (n.id === s.selectedId) drawOutline(ctx, n, '#e6e6f0', 2);
     else if (n.id === s.hoveredId && isClickable(n)) drawOutline(ctx, n, '#e6e6f0', 1.5);
   }
-}
-
-// Glow jaune « opportunité » derrière un hub de cluster non couvert (handoff).
-function drawOppGlow(ctx: CanvasRenderingContext2D, n: GraphNode, alpha: number): void {
-  if (n.x === undefined || n.y === undefined) return;
-  const outer = n.radius * 5.5;
-  const grad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, outer);
-  grad.addColorStop(0, withAlpha(OPP_COLOR, 0.35 * alpha));
-  grad.addColorStop(1, withAlpha(OPP_COLOR, 0));
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.arc(n.x, n.y, outer, 0, Math.PI * 2);
-  ctx.fill();
 }
 
 function drawKeyword(
