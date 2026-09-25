@@ -85,12 +85,12 @@ export function ArcadeDemo() {
       osc2.frequency.exponentialRampToValueAtTime(200, now + 0.2);
 
       const igniteGain = ctx.createGain();
-      igniteGain.gain.setValueAtTime(0.12, now);
-      igniteGain.gain.linearRampToValueAtTime(0.06, now + 0.3);
+      igniteGain.gain.setValueAtTime(0.05, now);
+      igniteGain.gain.linearRampToValueAtTime(0.025, now + 0.3);
       igniteGain.gain.linearRampToValueAtTime(0, now + 0.5);
 
       const noiseGain = ctx.createGain();
-      noiseGain.gain.setValueAtTime(0.04, now);
+      noiseGain.gain.setValueAtTime(0.015, now);
       noiseGain.gain.linearRampToValueAtTime(0, now + 0.15);
 
       osc.connect(igniteGain).connect(ctx.destination);
@@ -124,7 +124,7 @@ export function ArcadeDemo() {
 
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0, startTime);
-    gain.gain.linearRampToValueAtTime(0.035, startTime + 0.3);
+    gain.gain.linearRampToValueAtTime(0.014, startTime + 0.3);
 
     osc.connect(gain).connect(ctx.destination);
     osc.start(startTime);

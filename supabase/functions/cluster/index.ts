@@ -172,46 +172,67 @@ Deno.serve(async (req) => {
     reserved = true;
     usedAfter = reservation.used;
 
-    // 6) Claude — rembourse le slot en cas d'échec.
-    let clusterRun;
-    try {
-      const anthropic = new Anthropic({ apiKey: anthropicKey });
-      clusterRun = await runClustering(anthropic, model, sorted);
-    } catch (e) {
-      await refundQuota();
-      throw e;
-    }
-    const { assignments, unmatched, totalChunks, inputTokens, outputTokens } = clusterRun;
+    // 6) Partie LONGUE (appels Claude séquentiels). On renvoie un FLUX qui émet
+    // un "battement" (ligne vide) toutes les 10 s → la connexion n'est jamais
+    // inactive, ce qui évite l'idle timeout (~150 s) de Supabase et laisse le
+    // clustering aller jusqu'au bout. La DERNIÈRE ligne du flux est le résultat
+    // JSON (`{ok:true,...}`) ou une erreur (`{error,message,...}`). Le slot de
+    // quota est remboursé en cas d'échec.
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        const beat = setInterval(() => {
+          try {
+            controller.enqueue(encoder.encode('\n'));
+          } catch {
+            /* flux déjà fermé */
+          }
+        }, 10000);
+        const finish = (payload: unknown) => {
+          clearInterval(beat);
+          try {
+            controller.enqueue(encoder.encode(JSON.stringify(payload)));
+            controller.close();
+          } catch {
+            /* déjà fermé */
+          }
+        };
+        try {
+          const anthropic = new Anthropic({ apiKey: anthropicKey });
+          const clusterRun = await runClustering(anthropic, model, sorted);
+          const { assignments, unmatched, totalChunks, inputTokens, outputTokens } = clusterRun;
 
-    if (assignments.length === 0) {
-      await refundQuota();
-      return jsonResponse(
-        { error: 'no_clusters', message: "Claude n'a retourné aucun cluster valide" },
-        502,
-      );
-    }
+          if (assignments.length === 0) {
+            await refundQuota();
+            finish({ error: 'no_clusters', message: "Claude n'a retourné aucun cluster valide" });
+            return;
+          }
 
-    // 7) Save clusters — rembourse le slot en cas d'échec.
-    let saveResult;
-    try {
-      saveResult = await saveClusters(supabase, projectId, assignments, unmatched);
-    } catch (e) {
-      await refundQuota();
-      throw e;
-    }
+          const saveResult = await saveClusters(supabase, projectId, assignments, unmatched);
+          finish({
+            ok: true,
+            uniqueKeywordCount: sorted.length,
+            clusterCount: saveResult.newClusterCount,
+            persistedAssignments: saveResult.matchedKwCount,
+            unmatchedCount: unmatched.length,
+            unclusteredClusterId: saveResult.unclusteredClusterId,
+            totalChunks,
+            model,
+            usage: { inputTokens, outputTokens },
+            clusteringsUsed: usedAfter,
+            clusteringsLimit: quota,
+          });
+        } catch (e) {
+          console.error('[cluster] streaming error', e);
+          await refundQuota();
+          finish({ error: 'internal', message: e instanceof Error ? e.message : 'unknown' });
+        }
+      },
+    });
 
-    return jsonResponse({
-      ok: true,
-      uniqueKeywordCount: sorted.length,
-      clusterCount: saveResult.newClusterCount,
-      persistedAssignments: saveResult.matchedKwCount,
-      unmatchedCount: unmatched.length,
-      unclusteredClusterId: saveResult.unclusteredClusterId,
-      totalChunks,
-      model,
-      usage: { inputTokens, outputTokens },
-      clusteringsUsed: usedAfter,
-      clusteringsLimit: quota,
+    return new Response(stream, {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (e) {
     console.error('[cluster] uncaught error', e);
