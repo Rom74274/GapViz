@@ -125,19 +125,18 @@ Deno.serve(async (req) => {
       reserved = false;
     };
 
-    // 4) Fetch keywords (RLS filtre via user_id du projet).
-    const kwQ = await supabase
-      .from('keywords')
-      .select('id, keyword, volume')
-      .eq('project_id', projectId);
-    if (kwQ.error) {
-      return jsonResponse({ error: `Fetch keywords: ${kwQ.error.message}` }, 500);
+    // 4) Fetch keywords (RLS filtre via user_id du projet). PAGINÉ pour dépasser
+    // le cap 1000 lignes de PostgREST — sinon seuls les 1000 premiers KW seraient
+    // clusterisés (et les concurrents tomberaient en « Sans cluster »).
+    let keywords: Array<{ id: string; keyword: string; volume: number | null }>;
+    try {
+      keywords = await fetchAllKeywords(supabase, projectId, 'id, keyword, volume');
+    } catch (e) {
+      return jsonResponse(
+        { error: `Fetch keywords: ${e instanceof Error ? e.message : 'erreur'}` },
+        500,
+      );
     }
-    const keywords = (kwQ.data ?? []) as Array<{
-      id: string;
-      keyword: string;
-      volume: number | null;
-    }>;
     if (keywords.length === 0) {
       return jsonResponse(
         { error: 'no_keywords', message: 'Aucun mot-clé à clusteriser' },
@@ -257,6 +256,35 @@ Deno.serve(async (req) => {
     );
   }
 });
+
+// Récupère TOUTES les lignes keywords d'un projet en paginant (le cap 1000 de
+// PostgREST tronquerait sinon les gros projets).
+async function fetchAllKeywords(
+  supabase: SupabaseClient,
+  projectId: string,
+  columns: string,
+): Promise<Array<{ id: string; keyword: string; volume: number | null }>> {
+  const PAGE = 1000;
+  let from = 0;
+  const all: Array<{ id: string; keyword: string; volume: number | null }> = [];
+  for (;;) {
+    const { data, error } = await supabase
+      .from('keywords')
+      .select(columns)
+      .eq('project_id', projectId)
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    const batch = (data ?? []) as unknown as Array<{
+      id: string;
+      keyword: string;
+      volume: number | null;
+    }>;
+    all.push(...batch);
+    if (batch.length < PAGE) break;
+    from += PAGE;
+  }
+  return all;
+}
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -476,21 +504,17 @@ async function saveClusters(
     if (error) throw new Error(`delete clusters: ${error.message}`);
   }
 
-  // 3. Mapping keyword.text → keyword.id.
-  const allKwsQ = await supabase
-    .from('keywords')
-    .select('id, keyword')
-    .eq('project_id', projectId);
-  if (allKwsQ.error) throw new Error(`fetch keywords: ${allKwsQ.error.message}`);
-  // Map texte → TOUTES les lignes (une par domaine). Un même mot-clé existe en
-  // plusieurs lignes (ton site + concurrents) : le cluster doit être appliqué à
-  // TOUTES, sinon les lignes concurrentes restent en « Sans cluster ».
+  // 3. Mapping keyword.text → TOUTES les keyword.id (paginé, cap 1000 PostgREST).
+  // Un même mot-clé existe en plusieurs lignes (une par domaine : ton site +
+  // concurrents) : le cluster doit être appliqué à TOUTES, sinon les lignes
+  // concurrentes restent en « Sans cluster ».
+  const allKws = await fetchAllKeywords(supabase, projectId, 'id, keyword');
   const textToIds = new Map<string, string[]>();
-  for (const k of allKwsQ.data ?? []) {
-    const key = ((k as { keyword: string }).keyword).trim().toLowerCase();
+  for (const k of allKws) {
+    const key = k.keyword.trim().toLowerCase();
     const arr = textToIds.get(key);
-    if (arr) arr.push((k as { id: string }).id);
-    else textToIds.set(key, [(k as { id: string }).id]);
+    if (arr) arr.push(k.id);
+    else textToIds.set(key, [k.id]);
   }
 
   // 4. Construit clusters + buckets.

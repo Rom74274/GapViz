@@ -246,12 +246,25 @@ export async function saveClusteringToSupabase(
     if (error) throw new Error(`Supabase delete clusters: ${error.message}`);
   }
 
-  // 3. Charge le mapping keyword.text → keyword.id pour ce projet.
-  const { data: allKws, error: kwErr } = await supabase
-    .from('keywords')
-    .select('id, keyword')
-    .eq('project_id', projectId);
-  if (kwErr) throw new Error(`Supabase fetch keywords for assign: ${kwErr.message}`);
+  // 3. Charge le mapping keyword.text → keyword.id pour ce projet. Paginé pour
+  // dépasser le cap 1000 lignes de PostgREST (gros projets multi-concurrents).
+  const allKws: Array<{ id: string; keyword: string }> = [];
+  {
+    const PAGE = 1000;
+    let from = 0;
+    for (;;) {
+      const { data, error } = await supabase
+        .from('keywords')
+        .select('id, keyword')
+        .eq('project_id', projectId)
+        .range(from, from + PAGE - 1);
+      if (error) throw new Error(`Supabase fetch keywords for assign: ${error.message}`);
+      const batch = (data ?? []) as Array<{ id: string; keyword: string }>;
+      allKws.push(...batch);
+      if (batch.length < PAGE) break;
+      from += PAGE;
+    }
+  }
   // Map texte → TOUTES les lignes (une par domaine). Un même mot-clé existe en
   // plusieurs lignes (ton site + concurrents) : le cluster doit s'appliquer à
   // TOUTES, sinon les lignes concurrentes restent en « Sans cluster ».
