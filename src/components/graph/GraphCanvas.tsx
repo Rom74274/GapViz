@@ -1069,20 +1069,9 @@ function drawNodesAndHalos(
       drawOppGlow(ctx, n, s.fade * op);
     }
   }
-  // Filtre « Opportunités » actif : on met en LUMIÈRE uniquement les VRAIES
-  // opportunités (top des gaps par score, cf. computeOpportunityGlow) avec un
-  // halo ambré gradué par le score → la meilleure opportunité brille le plus.
-  // Les autres gaps restent visibles mais sans halo ; tes KW sont estompés.
-  if (s.oppGlow) {
-    for (const n of nodes) {
-      if (n.kind !== 'keyword') continue;
-      const intensity = s.oppGlow.get(n.id);
-      if (intensity === undefined) continue;
-      const op = getOp(s.opacities, n.id);
-      if (op < 0.4) continue;
-      drawKeywordOppGlow(ctx, n, s.fade * op, intensity);
-    }
-  }
+  // Filtre « Opportunités » actif : les VRAIES opportunités (top des gaps par
+  // score, cf. computeOpportunityGlow) sont mises en lumière directement sur le
+  // POINT lui-même (couleur ambrée + liseré clair), voir drawKeyword.
   for (const n of nodes) {
     if (n.kind === 'keyword') drawKeyword(ctx, n, s);
   }
@@ -1097,30 +1086,6 @@ function drawNodesAndHalos(
     if (n.id === s.selectedId) drawOutline(ctx, n, '#e6e6f0', 2);
     else if (n.id === s.hoveredId && isClickable(n)) drawOutline(ctx, n, '#e6e6f0', 1.5);
   }
-}
-
-// Halo ambré « opportunité » derrière une VRAIE opportunité (top des gaps).
-// `vis` = visibilité (fade × opacité), `intensity` = score normalisé 0..1 :
-// il gradue à la fois le rayon et l'intensité → la meilleure opportunité pop le
-// plus, les autres du top restent plus discrètes.
-function drawKeywordOppGlow(
-  ctx: CanvasRenderingContext2D,
-  n: KeywordNode,
-  vis: number,
-  intensity: number,
-): void {
-  if (n.x === undefined || n.y === undefined) return;
-  const r = leafDrawRadius(n);
-  const outer = r * (2.4 + 1.8 * intensity) + 5;
-  const core = (0.28 + 0.55 * intensity) * vis;
-  const grad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, outer);
-  grad.addColorStop(0, withAlpha(OPP_COLOR, core));
-  grad.addColorStop(0.45, withAlpha(OPP_COLOR, core * 0.35));
-  grad.addColorStop(1, withAlpha(OPP_COLOR, 0));
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.arc(n.x, n.y, outer, 0, Math.PI * 2);
-  ctx.fill();
 }
 
 // Glow jaune « opportunité » derrière un hub de cluster non couvert (handoff).
@@ -1147,6 +1112,22 @@ function drawKeyword(
   const dim = s.highlightedClusterId && n.clusterId !== s.highlightedClusterId ? 0.3 : 1;
   const baseAlpha = s.fade * dim * op * searchDim(s, n.id);
   // Taille de la feuille proportionnelle au volume (n.radius encode le volume).
+  const oppIntensity = s.oppGlow?.get(n.id);
+  // Vraie opportunité : le POINT lui-même est mis en lumière (jaune ambré,
+  // légèrement agrandi + liseré clair) au lieu de sa couleur de cluster.
+  if (oppIntensity !== undefined) {
+    const r = leafDrawRadius(n) * (1 + 0.35 * oppIntensity);
+    ctx.globalAlpha = baseAlpha;
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = OPP_COLOR;
+    ctx.fill();
+    ctx.strokeStyle = `rgba(255, 250, 225, ${0.95 * baseAlpha})`;
+    ctx.lineWidth = 1.1;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    return;
+  }
   const r = leafDrawRadius(n);
   ctx.globalAlpha = baseAlpha;
   ctx.beginPath();
