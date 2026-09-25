@@ -669,11 +669,16 @@ function Overlay({ children }: { children: React.ReactNode }) {
 // l'ampleur : un gros volume = un gros point = une grosse opportunité, un
 // petit volume = un petit point. Avant, le plafond à 3.4 écrasait tout le
 // monde à la même taille dès qu'il y avait un peu de volume.
-const LEAF_MIN_R = 1.6;
-const LEAF_MAX_R = 8;
+const LEAF_MIN_R = 1.2;
+const LEAF_MAX_R = 4.5;
 function leafDrawRadius(n: KeywordNode): number {
-  // n.radius ∈ [2, 35] (compressé en pow 0.6 depuis le volume). On l'étale sur
-  // toute la plage de dessin pour maximiser la lisibilité des écarts.
+  // n.radius ∈ [2, 35] (compressé en pow 0.6 depuis le volume). Le facteur 0.34
+  // (au lieu de 0.52) et le plafond à 4.5 (au lieu de 3.4) font que les valeurs
+  // ne s'écrasent plus toutes sur le plafond : le plafond n'est atteint que par
+  // le très haut du volume, tout le reste s'étale entre 1.2 et 4.5 → la taille
+  // révèle enfin l'ampleur. On ne va pas plus haut : au-delà, la densité imposée
+  // par le « fit to viewport » (aucun zoom-to-fit) ferait chevaucher les points,
+  // et le solveur de collisions gonflerait les clusters jusqu'à les fusionner.
   return Math.max(LEAF_MIN_R, Math.min(LEAF_MAX_R, n.radius * 0.34));
 }
 
@@ -901,19 +906,11 @@ function placeInitialPositions(nodes: GraphNode[], width: number, height: number
     const leavesList = kwByCluster.get(b.c.clusterId) ?? [];
     const innerR = b.c.radius + 4;
     const inner2 = innerR * innerR;
-    // Pas radial de la spirale. Il doit être assez grand pour que les PLUS GROS
-    // points du cluster ne se chevauchent pas : sur un tournesol, la distance
-    // entre deux voisins ≈ 1.7·SP, donc pour deux points de rayon r il faut
-    // 1.7·SP ≥ 2r + marge. On dimensionne SP sur le rayon max réel du cluster
-    // (les tailles sont en px fixes, indépendantes de fitScale) et on garde un
-    // plancher pour la densité de base. resolveLeafCollisions polit le reste.
-    let maxLeafR = LEAF_MIN_R;
-    for (const kw of leavesList) {
-      const r = leafDrawRadius(kw);
-      if (r > maxLeafR) maxLeafR = r;
-    }
-    const spNoOverlap = (2 * maxLeafR + 2.5) / 1.7;
-    const SP = Math.max(6 * fitScale, spNoOverlap); // pas radial par mot-clé
+    // Pas radial de la spirale. IMPÉRATIF : il doit rester couplé au même
+    // facteur (6) que blobR ci-dessus (`8 + √cnt·6`), sinon l'étalement réel des
+    // feuilles dépasse l'espace réservé (blobR) et les clusters se chevauchent /
+    // fusionnent. Un plancher indépendant casserait ce couplage.
+    const SP = 6 * fitScale; // pas radial par mot-clé (densité constante)
     leavesList.forEach((kw, i) => {
       const rr = Math.sqrt(inner2 + SP * SP * (i + 0.5));
       const a = i * 2.399963;
