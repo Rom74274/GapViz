@@ -10,7 +10,16 @@ export function containsPastYear(keyword: string, refYear = currentYearAtBuildTi
   return matches.some((y) => parseInt(y, 10) < refYear);
 }
 
-export function isKeywordVisible(node: KeywordNode, f: FilterState): boolean {
+// Opacité appliquée dans le GRAPHE à un mot-clé qui passe tous les filtres
+// « durs » mais qui n'est pas une opportunité, quand le filtre Opportunités est
+// actif. On l'estompe fortement au lieu de le cacher : la structure reste
+// lisible et les vraies opportunités ressortent par contraste.
+export const GAP_DIM_OPACITY = 0.07;
+
+// Filtres « durs » : tout SAUF gapOnly. Un KW qui les rate est réellement caché
+// partout (graphe, table, export). gapOnly est traité à part car, dans le
+// graphe, il estompe au lieu de cacher.
+function passesHardFilters(node: KeywordNode, f: FilterState): boolean {
   if (f.activeSites !== null) {
     if (!node.sources.some((s) => f.activeSites!.includes(s.domain))) return false;
   }
@@ -28,7 +37,6 @@ export function isKeywordVisible(node: KeywordNode, f: FilterState): boolean {
     const allowed = f.intents;
     if (!node.intent.some((i) => allowed.includes(i))) return false;
   }
-  if (f.gapOnly && !node.isGap) return false;
   if (f.excludedClusters.length > 0 && f.excludedClusters.includes(node.clusterId)) {
     return false;
   }
@@ -56,27 +64,51 @@ export function isKeywordVisible(node: KeywordNode, f: FilterState): boolean {
   return true;
 }
 
-// Visibility per node : keyword via isKeywordVisible, cluster meta via
-// "au moins 1 KW visible", center toujours visible.
+// Visibilité stricte (table de KW, export) : gapOnly CACHE les non-opportunités.
+export function isKeywordVisible(node: KeywordNode, f: FilterState): boolean {
+  if (!passesHardFilters(node, f)) return false;
+  if (f.gapOnly && !node.isGap) return false;
+  return true;
+}
+
+// Opacité cible dans le GRAPHE : 0 = caché, GAP_DIM_OPACITY = estompé, 1 = plein.
+// Différence clé avec isKeywordVisible : gapOnly n'y cache pas les non-gaps, il
+// les estompe pour garder le contexte visible.
+export function keywordGraphOpacity(node: KeywordNode, f: FilterState): number {
+  if (!passesHardFilters(node, f)) return 0;
+  if (f.gapOnly && !node.isGap) return GAP_DIM_OPACITY;
+  return 1;
+}
+
+// Opacités cibles par nœud pour le graphe.
+// - keyword : keywordGraphOpacity (0 / estompé / 1)
+// - cluster : max des opacités de ses KW (un cluster tout estompé s'estompe,
+//   un cluster avec au moins une opportunité reste plein)
+// - center  : toujours 1
+// visibleKwCount ne compte que les KW à pleine opacité (les vraies
+// opportunités quand le filtre est actif), pour un compteur qui a du sens.
 export function computeNodeVisibility(
   nodes: GraphNode[],
   f: FilterState,
-): { visible: Set<string>; visibleKwCount: number; totalKwCount: number } {
-  const visibleKwIds = new Set<string>();
+): { opacityTargets: Map<string, number>; visibleKwCount: number; totalKwCount: number } {
+  const opacityTargets = new Map<string, number>();
   let totalKw = 0;
-  const visibleClusterIds = new Set<string>();
+  let fullKwCount = 0;
+  const clusterMaxOp = new Map<string, number>();
   for (const n of nodes) {
     if (n.kind !== 'keyword') continue;
     totalKw++;
-    if (isKeywordVisible(n, f)) {
-      visibleKwIds.add(n.id);
-      visibleClusterIds.add(n.clusterId);
+    const op = keywordGraphOpacity(n, f);
+    opacityTargets.set(n.id, op);
+    if (op >= 1) fullKwCount++;
+    const prev = clusterMaxOp.get(n.clusterId) ?? 0;
+    if (op > prev) clusterMaxOp.set(n.clusterId, op);
+  }
+  for (const n of nodes) {
+    if (n.kind === 'center') opacityTargets.set(n.id, 1);
+    else if (n.kind === 'cluster') {
+      opacityTargets.set(n.id, clusterMaxOp.get(n.clusterId) ?? 0);
     }
   }
-  const visible = new Set<string>(visibleKwIds);
-  for (const n of nodes) {
-    if (n.kind === 'center') visible.add(n.id);
-    else if (n.kind === 'cluster' && visibleClusterIds.has(n.clusterId)) visible.add(n.id);
-  }
-  return { visible, visibleKwCount: visibleKwIds.size, totalKwCount: totalKw };
+  return { opacityTargets, visibleKwCount: fullKwCount, totalKwCount: totalKw };
 }

@@ -144,7 +144,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
 
   // Compute visibility (changes with filters or graph).
   const visibility = useMemo(() => {
-    if (!graph) return { visible: new Set<string>(), visibleKwCount: 0, totalKwCount: 0 };
+    if (!graph) return { opacityTargets: new Map<string, number>(), visibleKwCount: 0, totalKwCount: 0 };
     return computeNodeVisibility(graph.nodes, filters);
   }, [graph, filters]);
 
@@ -155,7 +155,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
     for (const n of graph.nodes) {
       if (!map.has(n.id)) map.set(n.id, { current: 1, target: 1 });
       const info = map.get(n.id)!;
-      info.target = visibility.visible.has(n.id) ? 1 : 0;
+      info.target = visibility.opacityTargets.get(n.id) ?? 0;
     }
     // Cleanup orphans (KWs supprimés).
     for (const id of map.keys()) {
