@@ -260,6 +260,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
       zoomK: t.k,
       opacities: opMap,
       searchMatchIds,
+      oppMode: filters.gapOnly,
     });
 
     drawClusterAndCenterLabels(ctx, graph.nodes, t.k, fade, opMap);
@@ -796,7 +797,7 @@ function placeInitialPositions(nodes: GraphNode[], width: number, height: number
   const blobs = clusterMetas.map((c) => {
     const leaves = kwByCluster.get(c.clusterId) ?? [];
     const cnt = leaves.length;
-    c.radius = Math.max(3, Math.min(12, 2.6 + Math.sqrt(cnt) * 0.32)); // sphère du hub
+    c.radius = Math.max(6, Math.min(20, 4 + Math.sqrt(cnt) * 0.5)); // sphère du hub (noyau)
     // Rayon de dessin max des feuilles de CE cluster → pas radial de la spirale
     // qui garantit que même les plus gros points ne se chevauchent pas : sur un
     // tournesol, la distance entre voisins ≈ 1.7·SP, donc 1.7·SP ≥ 2·rmax + marge.
@@ -1037,6 +1038,7 @@ interface NodeRenderState {
   zoomK: number;
   opacities: Map<string, NodeOpacity>;
   searchMatchIds: Set<string> | null;
+  oppMode: boolean; // filtre « Opportunités » actif → glow sur les vrais gaps
 }
 
 function searchDim(s: NodeRenderState, id: string): number {
@@ -1058,6 +1060,18 @@ function drawNodesAndHalos(
       drawOppGlow(ctx, n, s.fade * op);
     }
   }
+  // Filtre « Opportunités » actif : on met en LUMIÈRE les vrais mots-clés
+  // opportunités (gaps) avec un halo ambré, dont l'ampleur suit le volume →
+  // les grosses opportunités brillent le plus. Les non-opportunités, elles,
+  // sont estompées (opacité ~0.07) et ne passent donc pas le seuil ci-dessous.
+  if (s.oppMode) {
+    for (const n of nodes) {
+      if (n.kind !== 'keyword' || !n.isGap) continue;
+      const op = getOp(s.opacities, n.id);
+      if (op < 0.4) continue; // seulement les opportunités en pleine lumière
+      drawKeywordOppGlow(ctx, n, s.fade * op);
+    }
+  }
   for (const n of nodes) {
     if (n.kind === 'keyword') drawKeyword(ctx, n, s);
   }
@@ -1072,6 +1086,23 @@ function drawNodesAndHalos(
     if (n.id === s.selectedId) drawOutline(ctx, n, '#e6e6f0', 2);
     else if (n.id === s.hoveredId && isClickable(n)) drawOutline(ctx, n, '#e6e6f0', 1.5);
   }
+}
+
+// Halo ambré « opportunité » derrière un mot-clé gap (filtre Opportunités actif).
+// Rayon proportionnel à la taille dessinée (donc au volume) → une grosse
+// opportunité brille davantage qu'une petite.
+function drawKeywordOppGlow(ctx: CanvasRenderingContext2D, n: KeywordNode, alpha: number): void {
+  if (n.x === undefined || n.y === undefined) return;
+  const r = leafDrawRadius(n);
+  const outer = r * 3.2 + 4;
+  const grad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, outer);
+  grad.addColorStop(0, withAlpha(OPP_COLOR, 0.55 * alpha));
+  grad.addColorStop(0.45, withAlpha(OPP_COLOR, 0.2 * alpha));
+  grad.addColorStop(1, withAlpha(OPP_COLOR, 0));
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(n.x, n.y, outer, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 // Glow jaune « opportunité » derrière un hub de cluster non couvert (handoff).
