@@ -665,8 +665,16 @@ function Overlay({ children }: { children: React.ReactNode }) {
 
 // Rayon de dessin d'un mot-clé (proportionnel au volume). Source unique de
 // vérité, utilisée pour le rendu ET pour la résolution de collisions.
+// La plage est volontairement large (1.6 → 8) pour que la TAILLE révèle
+// l'ampleur : un gros volume = un gros point = une grosse opportunité, un
+// petit volume = un petit point. Avant, le plafond à 3.4 écrasait tout le
+// monde à la même taille dès qu'il y avait un peu de volume.
+const LEAF_MIN_R = 1.6;
+const LEAF_MAX_R = 8;
 function leafDrawRadius(n: KeywordNode): number {
-  return Math.max(1, Math.min(3.4, n.radius * 0.52));
+  // n.radius ∈ [2, 35] (compressé en pow 0.6 depuis le volume). On l'étale sur
+  // toute la plage de dessin pour maximiser la lisibilité des écarts.
+  return Math.max(LEAF_MIN_R, Math.min(LEAF_MAX_R, n.radius * 0.34));
 }
 
 // Rayon réellement dessiné à l'écran (≠ n.radius qui encode le volume brut).
@@ -685,7 +693,12 @@ function resolveLeafCollisions(leaves: KeywordNode[]): void {
   if (N < 2) return;
   const R = leaves.map(leafDrawRadius);
   const GAP = 1.4; // marge minimale entre deux bords de points
-  const cell = 9; // >= max(R)+max(R)+GAP → voisinage 3×3 suffisant
+  // La maille doit couvrir le plus gros couple possible : max(R)+max(R)+GAP,
+  // sinon deux gros points voisins pourraient se chevaucher sans être testés
+  // (voisinage 3×3). On la dimensionne donc sur le rayon max réel.
+  let maxR = 0;
+  for (const r of R) if (r > maxR) maxR = r;
+  const cell = Math.max(9, 2 * maxR + GAP);
   const iterations = N > 1200 ? 8 : 12;
   for (let it = 0; it < iterations; it++) {
     const grid = new Map<string, number[]>();
@@ -888,7 +901,19 @@ function placeInitialPositions(nodes: GraphNode[], width: number, height: number
     const leavesList = kwByCluster.get(b.c.clusterId) ?? [];
     const innerR = b.c.radius + 4;
     const inner2 = innerR * innerR;
-    const SP = 6 * fitScale; // pas radial par mot-clé (densité constante)
+    // Pas radial de la spirale. Il doit être assez grand pour que les PLUS GROS
+    // points du cluster ne se chevauchent pas : sur un tournesol, la distance
+    // entre deux voisins ≈ 1.7·SP, donc pour deux points de rayon r il faut
+    // 1.7·SP ≥ 2r + marge. On dimensionne SP sur le rayon max réel du cluster
+    // (les tailles sont en px fixes, indépendantes de fitScale) et on garde un
+    // plancher pour la densité de base. resolveLeafCollisions polit le reste.
+    let maxLeafR = LEAF_MIN_R;
+    for (const kw of leavesList) {
+      const r = leafDrawRadius(kw);
+      if (r > maxLeafR) maxLeafR = r;
+    }
+    const spNoOverlap = (2 * maxLeafR + 2.5) / 1.7;
+    const SP = Math.max(6 * fitScale, spNoOverlap); // pas radial par mot-clé
     leavesList.forEach((kw, i) => {
       const rr = Math.sqrt(inner2 + SP * SP * (i + 0.5));
       const a = i * 2.399963;
