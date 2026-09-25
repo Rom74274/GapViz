@@ -22,7 +22,7 @@ import {
 import { GraphToolbar } from './GraphToolbar';
 import { SearchBar } from './SearchBar';
 import { useProjectFilters } from '@/lib/filterStore';
-import { computeNodeVisibility } from '@/lib/filterLogic';
+import { computeNodeVisibility, computeOpportunityGlow } from '@/lib/filterLogic';
 import { globalTransformRef } from '@/lib/transformRef';
 import { useAuth } from '@/hooks/useAuth';
 import { PLAN_LIMITS } from '@/lib/plans';
@@ -149,6 +149,13 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
     return computeNodeVisibility(graph.nodes, filters);
   }, [graph, filters]);
 
+  // Vraies opportunités (top des gaps par score) → intensité du glow. Dépend
+  // seulement du graphe (recalcul rare), pas des filtres.
+  const oppGlow = useMemo(
+    () => (graph ? computeOpportunityGlow(graph.nodes) : new Map<string, number>()),
+    [graph],
+  );
+
   // Update opacity targets when visibility changes.
   useEffect(() => {
     if (!graph) return;
@@ -260,7 +267,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
       zoomK: t.k,
       opacities: opMap,
       searchMatchIds,
-      oppMode: filters.gapOnly,
+      oppGlow: filters.gapOnly ? oppGlow : null,
     });
 
     drawClusterAndCenterLabels(ctx, graph.nodes, t.k, fade, opMap);
@@ -1038,7 +1045,9 @@ interface NodeRenderState {
   zoomK: number;
   opacities: Map<string, NodeOpacity>;
   searchMatchIds: Set<string> | null;
-  oppMode: boolean; // filtre « Opportunités » actif → glow sur les vrais gaps
+  // Filtre « Opportunités » actif : map<id, intensité 0..1> des SEULES vraies
+  // opportunités (top des gaps par score). null si le filtre est inactif.
+  oppGlow: Map<string, number> | null;
 }
 
 function searchDim(s: NodeRenderState, id: string): number {
@@ -1060,16 +1069,18 @@ function drawNodesAndHalos(
       drawOppGlow(ctx, n, s.fade * op);
     }
   }
-  // Filtre « Opportunités » actif : on met en LUMIÈRE les vrais mots-clés
-  // opportunités (gaps) avec un halo ambré, dont l'ampleur suit le volume →
-  // les grosses opportunités brillent le plus. Les non-opportunités, elles,
-  // sont estompées (opacité ~0.07) et ne passent donc pas le seuil ci-dessous.
-  if (s.oppMode) {
+  // Filtre « Opportunités » actif : on met en LUMIÈRE uniquement les VRAIES
+  // opportunités (top des gaps par score, cf. computeOpportunityGlow) avec un
+  // halo ambré gradué par le score → la meilleure opportunité brille le plus.
+  // Les autres gaps restent visibles mais sans halo ; tes KW sont estompés.
+  if (s.oppGlow) {
     for (const n of nodes) {
-      if (n.kind !== 'keyword' || !n.isGap) continue;
+      if (n.kind !== 'keyword') continue;
+      const intensity = s.oppGlow.get(n.id);
+      if (intensity === undefined) continue;
       const op = getOp(s.opacities, n.id);
-      if (op < 0.4) continue; // seulement les opportunités en pleine lumière
-      drawKeywordOppGlow(ctx, n, s.fade * op);
+      if (op < 0.4) continue;
+      drawKeywordOppGlow(ctx, n, s.fade * op, intensity);
     }
   }
   for (const n of nodes) {
@@ -1088,16 +1099,23 @@ function drawNodesAndHalos(
   }
 }
 
-// Halo ambré « opportunité » derrière un mot-clé gap (filtre Opportunités actif).
-// Rayon proportionnel à la taille dessinée (donc au volume) → une grosse
-// opportunité brille davantage qu'une petite.
-function drawKeywordOppGlow(ctx: CanvasRenderingContext2D, n: KeywordNode, alpha: number): void {
+// Halo ambré « opportunité » derrière une VRAIE opportunité (top des gaps).
+// `vis` = visibilité (fade × opacité), `intensity` = score normalisé 0..1 :
+// il gradue à la fois le rayon et l'intensité → la meilleure opportunité pop le
+// plus, les autres du top restent plus discrètes.
+function drawKeywordOppGlow(
+  ctx: CanvasRenderingContext2D,
+  n: KeywordNode,
+  vis: number,
+  intensity: number,
+): void {
   if (n.x === undefined || n.y === undefined) return;
   const r = leafDrawRadius(n);
-  const outer = r * 3.2 + 4;
+  const outer = r * (2.4 + 1.8 * intensity) + 5;
+  const core = (0.28 + 0.55 * intensity) * vis;
   const grad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, outer);
-  grad.addColorStop(0, withAlpha(OPP_COLOR, 0.55 * alpha));
-  grad.addColorStop(0.45, withAlpha(OPP_COLOR, 0.2 * alpha));
+  grad.addColorStop(0, withAlpha(OPP_COLOR, core));
+  grad.addColorStop(0.45, withAlpha(OPP_COLOR, core * 0.35));
   grad.addColorStop(1, withAlpha(OPP_COLOR, 0));
   ctx.fillStyle = grad;
   ctx.beginPath();

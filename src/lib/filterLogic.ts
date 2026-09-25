@@ -112,3 +112,54 @@ export function computeNodeVisibility(
   }
   return { opacityTargets, visibleKwCount: fullKwCount, totalKwCount: totalKw };
 }
+
+// Part des gaps mis en lumière comme « vraies opportunités » (top du score).
+const OPPORTUNITY_TOP_RATIO = 0.18;
+
+// Score d'opportunité d'un gap = volume × accessibilité × validation concurrent.
+//  - volume        : potentiel de trafic (brut)
+//  - accessibilité : (100 - KD)/100 → plus la difficulté est faible, mieux c'est
+//                    (KD inconnu → 0.6, neutre)
+//  - validation    : un concurrent bien classé prouve que le mot-clé est rankable
+//                    et pertinent (meilleure position d'un concurrent)
+// Ce n'est PAS « tout KW hors de toi » : un gap sans volume, très difficile ou où
+// aucun concurrent n'est bien classé obtient un score faible et n'est pas allumé.
+function opportunityScore(n: KeywordNode): number {
+  const vol = Math.max(0, n.volume);
+  if (vol <= 0) return 0; // sans volume, pas d'opportunité mesurable
+  const access = n.kd == null ? 0.6 : Math.max(0.05, (100 - Math.min(100, Math.max(0, n.kd))) / 100);
+  let bestPos = Infinity;
+  for (const s of n.sources) {
+    if (s.position != null && s.position < bestPos) bestPos = s.position;
+  }
+  let validation: number;
+  if (!isFinite(bestPos)) validation = 0.5;
+  else if (bestPos <= 3) validation = 1;
+  else if (bestPos <= 10) validation = 0.8;
+  else if (bestPos <= 20) validation = 0.55;
+  else if (bestPos <= 50) validation = 0.3;
+  else validation = 0.15;
+  return vol * access * validation;
+}
+
+// Map<id, intensité 0..1> pour les SEULES vraies opportunités (top ~18 % des gaps
+// par score). L'intensité (glow) est graduée : la meilleure opportunité = 1.
+// Les gaps hors top ne sont pas dans la map → pas de glow (mais restent visibles).
+export function computeOpportunityGlow(nodes: GraphNode[]): Map<string, number> {
+  const scored: { id: string; score: number }[] = [];
+  for (const n of nodes) {
+    if (n.kind !== 'keyword' || !n.isGap) continue;
+    const score = opportunityScore(n);
+    if (score > 0) scored.push({ id: n.id, score });
+  }
+  const glow = new Map<string, number>();
+  if (scored.length === 0) return glow;
+  scored.sort((a, b) => b.score - a.score);
+  const topN = Math.max(1, Math.ceil(scored.length * OPPORTUNITY_TOP_RATIO));
+  const maxScore = scored[0]!.score || 1;
+  for (let i = 0; i < topN; i++) {
+    const { id, score } = scored[i]!;
+    glow.set(id, 0.35 + 0.65 * (score / maxScore));
+  }
+  return glow;
+}
