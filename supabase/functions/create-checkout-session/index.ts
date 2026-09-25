@@ -13,7 +13,7 @@
 //   APP_URL                    — URL de l'app (ex: https://rom74274.github.io/GapViz)
 // =============================================================================
 
-import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { createClient } from 'jsr:@supabase/supabase-js@2.110.7';
 import Stripe from 'npm:stripe@17';
 import { corsHeaders } from '../_shared/cors.ts';
 

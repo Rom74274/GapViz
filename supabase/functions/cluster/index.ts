@@ -18,7 +18,7 @@
 //   - supabase functions deploy cluster --no-verify-jwt false
 // =============================================================================
 
-import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
+import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2.110.7';
 import Anthropic from 'npm:@anthropic-ai/sdk@0.36.3';
 import { corsHeaders } from '../_shared/cors.ts';
 import {

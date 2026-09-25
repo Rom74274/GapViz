@@ -26,8 +26,8 @@
 //     event non géré) → 200 + log, pour ne pas boucler puis désactiver l'endpoint.
 // =============================================================================
 
-import { createClient } from 'jsr:@supabase/supabase-js@2';
-import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
+import { createClient } from 'jsr:@supabase/supabase-js@2.110.7';
+import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2.110.7';
 import Stripe from 'npm:stripe@17';
 
 // Résout l'ID utilisateur Supabase : d'abord via la metadata de l'objet Stripe,

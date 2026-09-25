@@ -14,7 +14,7 @@
 //   SB_SERVICE_ROLE_KEY   — service role pour bypass RLS (déjà set)
 // =============================================================================
 
-import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { createClient } from 'jsr:@supabase/supabase-js@2.110.7';
 import { corsHeaders } from '../_shared/cors.ts';
 import { type ParsedRow } from './parsers/_shared.ts';
 import { parseAhrefsCsv } from './parsers/ahrefs.ts';
