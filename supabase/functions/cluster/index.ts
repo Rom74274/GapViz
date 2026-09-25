@@ -145,6 +145,18 @@ Deno.serve(async (req) => {
       );
     }
     const sorted = [...keywords].sort((a, b) => (b.volume ?? 0) - (a.volume ?? 0));
+    // Déduplication par TEXTE : un même mot-clé existe en plusieurs lignes (une
+    // par domaine : ton site + concurrents). On ne clusterise que les textes
+    // UNIQUES (représentant = plus gros volume, car trié desc). Le cluster est
+    // ensuite appliqué à TOUTES les lignes du texte dans saveClusters. Évite
+    // d'envoyer les doublons à Claude (moins de chunks, moins cher, plus rapide).
+    const seenText = new Set<string>();
+    const uniqueKeywords = sorted.filter((k) => {
+      const t = k.keyword.trim().toLowerCase();
+      if (seenText.has(t)) return false;
+      seenText.add(t);
+      return true;
+    });
 
     // 5) Réservation ATOMIQUE d'un slot de quota (anti-abus concurrence) AVANT
     // l'appel Claude — verrou de ligne côté SQL. Remboursée si échec plus bas.
@@ -199,7 +211,7 @@ Deno.serve(async (req) => {
         };
         try {
           const anthropic = new Anthropic({ apiKey: anthropicKey });
-          const clusterRun = await runClustering(anthropic, model, sorted);
+          const clusterRun = await runClustering(anthropic, model, uniqueKeywords);
           const { assignments, unmatched, totalChunks, inputTokens, outputTokens } = clusterRun;
 
           if (assignments.length === 0) {
@@ -211,7 +223,7 @@ Deno.serve(async (req) => {
           const saveResult = await saveClusters(supabase, projectId, assignments, unmatched);
           finish({
             ok: true,
-            uniqueKeywordCount: sorted.length,
+            uniqueKeywordCount: uniqueKeywords.length,
             clusterCount: saveResult.newClusterCount,
             persistedAssignments: saveResult.matchedKwCount,
             unmatchedCount: unmatched.length,
@@ -470,12 +482,15 @@ async function saveClusters(
     .select('id, keyword')
     .eq('project_id', projectId);
   if (allKwsQ.error) throw new Error(`fetch keywords: ${allKwsQ.error.message}`);
-  const textToId = new Map<string, string>();
+  // Map texte → TOUTES les lignes (une par domaine). Un même mot-clé existe en
+  // plusieurs lignes (ton site + concurrents) : le cluster doit être appliqué à
+  // TOUTES, sinon les lignes concurrentes restent en « Sans cluster ».
+  const textToIds = new Map<string, string[]>();
   for (const k of allKwsQ.data ?? []) {
-    textToId.set(
-      ((k as { keyword: string }).keyword).trim().toLowerCase(),
-      (k as { id: string }).id,
-    );
+    const key = ((k as { keyword: string }).keyword).trim().toLowerCase();
+    const arr = textToIds.get(key);
+    if (arr) arr.push((k as { id: string }).id);
+    else textToIds.set(key, [(k as { id: string }).id]);
   }
 
   // 4. Construit clusters + buckets.
@@ -502,10 +517,13 @@ async function saveClusters(
     });
     const kwIds: string[] = [];
     for (const kwText of a.keywords) {
-      const id = textToId.get(kwText.trim().toLowerCase());
-      if (id && !matched.has(id)) {
-        kwIds.push(id);
-        matched.add(id);
+      const ids = textToIds.get(kwText.trim().toLowerCase());
+      if (!ids) continue;
+      for (const id of ids) {
+        if (!matched.has(id)) {
+          kwIds.push(id);
+          matched.add(id);
+        }
       }
     }
     if (kwIds.length > 0) assignBuckets.push({ clusterId, kwIds });
@@ -525,10 +543,13 @@ async function saveClusters(
     });
     const kwIds: string[] = [];
     for (const kwText of unmatched) {
-      const id = textToId.get(kwText.trim().toLowerCase());
-      if (id && !matched.has(id)) {
-        kwIds.push(id);
-        matched.add(id);
+      const ids = textToIds.get(kwText.trim().toLowerCase());
+      if (!ids) continue;
+      for (const id of ids) {
+        if (!matched.has(id)) {
+          kwIds.push(id);
+          matched.add(id);
+        }
       }
     }
     if (kwIds.length > 0) {

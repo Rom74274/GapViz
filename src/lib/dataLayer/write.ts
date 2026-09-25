@@ -252,9 +252,15 @@ export async function saveClusteringToSupabase(
     .select('id, keyword')
     .eq('project_id', projectId);
   if (kwErr) throw new Error(`Supabase fetch keywords for assign: ${kwErr.message}`);
-  const textToId = new Map<string, string>();
+  // Map texte → TOUTES les lignes (une par domaine). Un même mot-clé existe en
+  // plusieurs lignes (ton site + concurrents) : le cluster doit s'appliquer à
+  // TOUTES, sinon les lignes concurrentes restent en « Sans cluster ».
+  const textToIds = new Map<string, string[]>();
   for (const k of allKws ?? []) {
-    textToId.set((k.keyword as string).trim().toLowerCase(), k.id as string);
+    const key = (k.keyword as string).trim().toLowerCase();
+    const arr = textToIds.get(key);
+    if (arr) arr.push(k.id as string);
+    else textToIds.set(key, [k.id as string]);
   }
 
   // 4. Insert new clusters + collect assignments.
@@ -281,10 +287,13 @@ export async function saveClusteringToSupabase(
     });
     const kwIds: string[] = [];
     for (const kwText of a.keywords) {
-      const id = textToId.get(kwText.trim().toLowerCase());
-      if (id && !matched.has(id)) {
-        kwIds.push(id);
-        matched.add(id);
+      const ids = textToIds.get(kwText.trim().toLowerCase());
+      if (!ids) continue;
+      for (const id of ids) {
+        if (!matched.has(id)) {
+          kwIds.push(id);
+          matched.add(id);
+        }
       }
     }
     if (kwIds.length > 0) assignBuckets.push({ clusterId, kwIds });
@@ -304,10 +313,13 @@ export async function saveClusteringToSupabase(
     });
     const kwIds: string[] = [];
     for (const kwText of unmatched) {
-      const id = textToId.get(kwText.trim().toLowerCase());
-      if (id && !matched.has(id)) {
-        kwIds.push(id);
-        matched.add(id);
+      const ids = textToIds.get(kwText.trim().toLowerCase());
+      if (!ids) continue;
+      for (const id of ids) {
+        if (!matched.has(id)) {
+          kwIds.push(id);
+          matched.add(id);
+        }
       }
     }
     if (kwIds.length > 0) {
