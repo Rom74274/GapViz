@@ -1093,15 +1093,24 @@ function drawKeyword(
   const baseAlpha = s.fade * dim * op * searchDim(s, n.id);
   // Taille de la feuille proportionnelle au volume (n.radius encode le volume).
   const oppIntensity = s.oppGlow?.get(n.id);
-  // Vraie opportunité : le POINT lui-même est mis en lumière (jaune ambré,
-  // légèrement agrandi + liseré clair) au lieu de sa couleur de cluster.
+  // Vraie opportunité : le POINT lui-même devient lumineux (jaune ambré,
+  // légèrement agrandi, petit glow serré via shadowBlur + liseré clair) au lieu
+  // de sa couleur de cluster. shadowBlur est proportionnel au point → glow fin.
   if (oppIntensity !== undefined) {
     const r = leafDrawRadius(n) * (1 + 0.35 * oppIntensity);
     ctx.globalAlpha = baseAlpha;
+    ctx.save();
+    ctx.shadowColor = OPP_COLOR;
+    ctx.shadowBlur = r * (1.1 + 0.9 * oppIntensity); // petit glow, pas épais
     ctx.beginPath();
     ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
     ctx.fillStyle = OPP_COLOR;
     ctx.fill();
+    ctx.fill(); // 2e passe : renforce légèrement la luminosité du halo
+    ctx.restore();
+    // Liseré clair net (sans ombre) pour bien détacher le point.
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
     ctx.strokeStyle = `rgba(255, 250, 225, ${0.95 * baseAlpha})`;
     ctx.lineWidth = 1.1;
     ctx.stroke();
