@@ -408,6 +408,9 @@ async function callClaude(
       .stream({
         model: opts.model,
         max_tokens: MAX_TOKENS,
+        // Sonnet 5 réfléchit (thinking) par défaut et consommait tout le budget
+        // de tokens avant de répondre → on désactive (tâche structurée).
+        thinking: { type: 'disabled' },
         system: systemPrompt,
         messages: [{ role: 'user', content: userMessage }],
       })

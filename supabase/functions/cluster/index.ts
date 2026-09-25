@@ -404,6 +404,10 @@ async function callClaude(
     .stream({
       model,
       max_tokens: MAX_TOKENS,
+      // Sonnet 5 fait de la réflexion étendue par défaut, qui mangeait tout le
+      // budget de tokens (stop_reason=max_tokens, aucun texte). On la désactive :
+      // le clustering est une tâche structurée qui n'en a pas besoin.
+      thinking: { type: 'disabled' },
       system: systemPrompt,
       messages: [{ role: 'user', content: userMessage }],
     })
