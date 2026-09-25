@@ -102,6 +102,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
   const opacityMapRef = useRef<Map<string, NodeOpacity>>(new Map());
   const simRef = useRef<d3.Simulation<GraphNode, undefined> | null>(null);
   const dragRef = useRef<DragState | null>(null);
+  const fittedSigRef = useRef<string>(''); // signature du dernier zoom-to-fit auto
 
   const [size, setSize] = useState({ width: 800, height: 600 });
   const [hover, setHover] = useState<HoverState | null>(null);
@@ -187,8 +188,9 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
       d3.select(canvasRef.current).transition().duration(500).call(zoomRef.current.transform, t);
     },
     resetZoom: () => {
-      if (!canvasRef.current || !zoomRef.current) return;
-      d3.select(canvasRef.current).transition().duration(280).call(zoomRef.current.transform, d3.zoomIdentity);
+      if (!canvasRef.current || !zoomRef.current || !graph) return;
+      const t = fitAllToViewport(graph.nodes, size.width, size.height, 0.9) ?? d3.zoomIdentity;
+      d3.select(canvasRef.current).transition().duration(400).call(zoomRef.current.transform, t);
     },
   }), [graph, size.width, size.height]);
 
@@ -370,7 +372,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
     const selection = d3.select<HTMLCanvasElement, unknown>(canvas);
     const zoom = d3
       .zoom<HTMLCanvasElement, unknown>()
-      .scaleExtent([0.1, 5])
+      .scaleExtent([0.04, 6])
       .filter((event) => {
         if (event.button) return false;
         if (event.type === 'mousedown') {
@@ -409,6 +411,22 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
       globalTransformRef.current = d3.zoomIdentity;
     };
   }, []);
+
+  // ---------------------------------------------------------------- zoom-to-fit auto à l'ouverture
+  // Le layout étant calculé à sa taille naturelle (souvent plus grande que la
+  // fenêtre), on cadre l'ensemble une fois par changement de structure/taille.
+  // Les positions sont déjà posées (useLayoutEffect de layout, qui tourne avant).
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const zoom = zoomRef.current;
+    if (!graph || size.width === 0 || !canvas || !zoom) return;
+    const sig = `${graph.nodes.length}:${size.width}x${size.height}`;
+    if (sig === fittedSigRef.current) return; // déjà cadré (filtre/drag ne refit pas)
+    const t = fitAllToViewport(graph.nodes, size.width, size.height, 0.9);
+    if (!t) return;
+    fittedSigRef.current = sig;
+    d3.select(canvas).call(zoom.transform, t); // cadrage instantané
+  }, [graph, size.width, size.height]);
 
   // ---------------------------------------------------------------- pointer events (hover, click, drag, dblclick)
   useEffect(() => {
@@ -584,8 +602,9 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
   const onReset = () => {
     const canvas = canvasRef.current;
     const zoom = zoomRef.current;
-    if (!canvas || !zoom) return;
-    d3.select(canvas).transition().duration(280).call(zoom.transform, d3.zoomIdentity);
+    if (!canvas || !zoom || !graph) return;
+    const t = fitAllToViewport(graph.nodes, size.width, size.height, 0.9) ?? d3.zoomIdentity;
+    d3.select(canvas).transition().duration(400).call(zoom.transform, t);
   };
 
   const isLoading = !graph;
@@ -669,17 +688,16 @@ function Overlay({ children }: { children: React.ReactNode }) {
 // l'ampleur : un gros volume = un gros point = une grosse opportunité, un
 // petit volume = un petit point. Avant, le plafond à 3.4 écrasait tout le
 // monde à la même taille dès qu'il y avait un peu de volume.
-const LEAF_MIN_R = 1.2;
-const LEAF_MAX_R = 4.5;
+const LEAF_MIN_R = 1.5;
+const LEAF_MAX_R = 9;
 function leafDrawRadius(n: KeywordNode): number {
-  // n.radius ∈ [2, 35] (compressé en pow 0.6 depuis le volume). Le facteur 0.34
-  // (au lieu de 0.52) et le plafond à 4.5 (au lieu de 3.4) font que les valeurs
-  // ne s'écrasent plus toutes sur le plafond : le plafond n'est atteint que par
-  // le très haut du volume, tout le reste s'étale entre 1.2 et 4.5 → la taille
-  // révèle enfin l'ampleur. On ne va pas plus haut : au-delà, la densité imposée
-  // par le « fit to viewport » (aucun zoom-to-fit) ferait chevaucher les points,
-  // et le solveur de collisions gonflerait les clusters jusqu'à les fusionner.
-  return Math.max(LEAF_MIN_R, Math.min(LEAF_MAX_R, n.radius * 0.34));
+  // n.radius ∈ [2, 35] (compressé en pow 0.6 depuis le volume). Plage large
+  // (1.5 → 9) : la taille du point révèle clairement l'ampleur de l'opportunité.
+  // Ce n'est plus contraint par le « fit to viewport » : le layout est calculé à
+  // sa densité naturelle (non-chevauchement garanti par le pas de la spirale,
+  // cf. stepBase) puis un zoom-to-fit cadre l'ensemble. Le zoom d3 scale TOUT le
+  // contexte (positions ET rayons) → le non-chevauchement tient à tout zoom.
+  return Math.max(LEAF_MIN_R, Math.min(LEAF_MAX_R, n.radius * 0.4));
 }
 
 // Rayon réellement dessiné à l'écran (≠ n.radius qui encode le volume brut).
@@ -754,8 +772,6 @@ function placeInitialPositions(nodes: GraphNode[], width: number, height: number
   const leftPad = 320, rightPad = 300, topPad = 40, botPad = 40;
   const cx = (leftPad + (width - rightPad)) / 2;
   const cy = (topPad + (height - botPad)) / 2;
-  const Rmax =
-    Math.min((width - rightPad - leftPad) / 2, (height - topPad - botPad) / 2) * 0.98;
 
   const center = nodes.find((n) => n.kind === 'center');
   if (center) {
@@ -775,13 +791,30 @@ function placeInitialPositions(nodes: GraphNode[], width: number, height: number
   }
 
   const clusterMetas = nodes.filter((n): n is ClusterMetaNode => n.kind === 'cluster');
-  // Un blob (bulle) par cluster ; rayon selon le nb de mots-clés.
+  // Un blob (bulle) par cluster ; rayon selon le nb de mots-clés ET la taille des
+  // plus gros points du cluster (densité size-aware).
   const blobs = clusterMetas.map((c) => {
-    const cnt = (kwByCluster.get(c.clusterId) ?? []).length;
+    const leaves = kwByCluster.get(c.clusterId) ?? [];
+    const cnt = leaves.length;
     c.radius = Math.max(3, Math.min(12, 2.6 + Math.sqrt(cnt) * 0.32)); // sphère du hub
+    // Rayon de dessin max des feuilles de CE cluster → pas radial de la spirale
+    // qui garantit que même les plus gros points ne se chevauchent pas : sur un
+    // tournesol, la distance entre voisins ≈ 1.7·SP, donc 1.7·SP ≥ 2·rmax + marge.
+    let maxLeafR = LEAF_MIN_R;
+    for (const kw of leaves) {
+      const r = leafDrawRadius(kw);
+      if (r > maxLeafR) maxLeafR = r;
+    }
+    const stepBase = Math.max(6, (2 * maxLeafR + 3) / 1.7);
+    const innerR = c.radius + 4;
+    // blobR = rayon RÉEL du nuage de feuilles (spirale de Fermat). L'espace
+    // réservé au packing correspond ainsi EXACTEMENT à l'étalement des feuilles
+    // → clusters distincts garantis (c'est le découplage qui cassait avant).
+    const blobR = Math.sqrt(innerR * innerR + stepBase * stepBase * cnt) + maxLeafR + 2;
     return {
       c,
-      blobR: 8 + Math.sqrt(Math.max(1, cnt)) * 6,
+      stepBase,
+      blobR,
       x: cx + (rng() - 0.5) * 80,
       y: cy + (rng() - 0.5) * 80,
     };
@@ -829,21 +862,20 @@ function placeInitialPositions(nodes: GraphNode[], width: number, height: number
     }
   }
 
-  // DÉCOUPLAGE intra / inter :
-  //  - `fitScale` fixe la densité DANS les clusters (inchangée, comme avant).
-  //  - `SPREAD` écarte les GROUPES entre eux, sans toucher à l'intérieur.
-  // Augmenter SPREAD = plus d'espace entre clusters (les KW ne bougent pas).
-  let packR = 1;
-  for (const b of blobs) packR = Math.max(packR, Math.hypot(b.x - cx, b.y - cy) + b.blobR);
-  const fitScale = Math.min(1.6, (Rmax * 0.98) / packR);
+  // Plus de compression « fit to viewport » : le layout est calculé à sa taille
+  // NATURELLE (densité qui garantit le non-chevauchement). Le cadrage se fait par
+  // un zoom-to-fit à l'ouverture (fitAllToViewport), et comme le zoom d3 scale
+  // TOUT le contexte (positions ET rayons des points), le non-chevauchement est
+  // préservé à tout niveau de zoom — ce que l'ancienne compression cassait.
+  // `SPREAD` écarte les GROUPES entre eux (les KW à l'intérieur ne bougent pas).
   const SPREAD = 1.7; // écart entre groupes de clusters (1 = serré)
   const CLEAR_RADIUS = 110; // rayon vide autour de « Mon site » (aucun cluster dedans)
-  const FINAL_GAP = 16; // écart mini entre bords de clusters (px finaux)
+  const FINAL_GAP = 16; // écart mini entre bords de clusters (px)
 
-  // Positions/tailles finales des clusters.
-  const fx = blobs.map((b) => cx + (b.x - cx) * fitScale * SPREAD);
-  const fy = blobs.map((b) => cy + (b.y - cy) * fitScale * SPREAD);
-  const fr = blobs.map((b) => b.blobR * fitScale);
+  // Positions/tailles finales des clusters (échelle naturelle).
+  const fx = blobs.map((b) => cx + (b.x - cx) * SPREAD);
+  const fy = blobs.map((b) => cy + (b.y - cy) * SPREAD);
+  const fr = blobs.map((b) => b.blobR);
 
   // Relaxation finale : zone franche centrale + anti-chevauchement entre
   // clusters résolus ENSEMBLE (repousser hors du centre ne recrée plus de
@@ -906,11 +938,11 @@ function placeInitialPositions(nodes: GraphNode[], width: number, height: number
     const leavesList = kwByCluster.get(b.c.clusterId) ?? [];
     const innerR = b.c.radius + 4;
     const inner2 = innerR * innerR;
-    // Pas radial de la spirale. IMPÉRATIF : il doit rester couplé au même
-    // facteur (6) que blobR ci-dessus (`8 + √cnt·6`), sinon l'étalement réel des
-    // feuilles dépasse l'espace réservé (blobR) et les clusters se chevauchent /
-    // fusionnent. Un plancher indépendant casserait ce couplage.
-    const SP = 6 * fitScale; // pas radial par mot-clé (densité constante)
+    // Pas radial de la spirale = le MÊME stepBase que celui utilisé pour blobR.
+    // Ce couplage est impératif : l'étalement réel des feuilles = l'espace réservé
+    // → clusters distincts, et stepBase est dimensionné pour que les plus gros
+    // points ne se chevauchent pas.
+    const SP = b.stepBase; // pas radial par mot-clé (densité size-aware)
     leavesList.forEach((kw, i) => {
       const rr = Math.sqrt(inner2 + SP * SP * (i + 0.5));
       const a = i * 2.399963;
@@ -1274,6 +1306,41 @@ function drawKeywordLabels(
 // ============================================================================
 // Helpers
 // ============================================================================
+
+// Cadre TOUT le graphe (zoom-to-fit à l'ouverture). Le layout est calculé à sa
+// taille naturelle → cette transform le ramène entièrement dans la fenêtre. Le
+// zoom scale positions ET rayons uniformément, donc aucun chevauchement n'apparaît.
+function fitAllToViewport(
+  nodes: GraphNode[],
+  width: number,
+  height: number,
+  padding: number,
+): d3.ZoomTransform | null {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const n of nodes) {
+    if (n.x === undefined || n.y === undefined) continue;
+    const r = nodeDisplayRadius(n);
+    minX = Math.min(minX, n.x - r);
+    minY = Math.min(minY, n.y - r);
+    maxX = Math.max(maxX, n.x + r);
+    maxY = Math.max(maxY, n.y + r);
+  }
+  if (!isFinite(minX)) return null;
+  const bboxW = maxX - minX;
+  const bboxH = maxY - minY;
+  // Réserve l'emprise des panneaux flottants (gauche ~320, droite ~300) pour que
+  // le graphe se cadre dans la zone réellement visible plutôt que sous les panneaux.
+  const availW = Math.max(200, width - 320 - 300);
+  const availH = Math.max(200, height - 80);
+  const scale = Math.min((availW * padding) / Math.max(1, bboxW), (availH * padding) / Math.max(1, bboxH), 2.5);
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  // Centre horizontal = milieu de la zone entre panneaux (320 → width-300).
+  const screenCx = (320 + (width - 300)) / 2;
+  return d3.zoomIdentity
+    .translate(screenCx - cx * scale, height / 2 - cy * scale)
+    .scale(scale);
+}
 
 function fitClusterToViewport(
   nodes: GraphNode[],
