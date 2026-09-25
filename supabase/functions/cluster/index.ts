@@ -413,7 +413,10 @@ async function callClaude(
     (c: { type: string }) => c.type === 'text',
   ) as { type: 'text'; text: string } | undefined;
   if (!textBlock || textBlock.type !== 'text') {
-    throw new Error('Pas de réponse texte reçue de Claude');
+    const blocks = response.content.map((c: { type: string }) => c.type).join(',') || 'vide';
+    throw new Error(
+      `Pas de réponse texte reçue de Claude (stop_reason=${response.stop_reason ?? '?'}, blocs=[${blocks}])`,
+    );
   }
   const parsed = parseClusterResponse(textBlock.text, inputKeywords);
   return {

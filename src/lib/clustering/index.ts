@@ -434,7 +434,10 @@ async function callClaude(
   const textBlock = response.content.find((c) => c.type === 'text');
   if (!textBlock || textBlock.type !== 'text') {
     errLog(`no text block in response (${label})`, response.content);
-    throw new Error('Pas de réponse texte reçue de Claude');
+    const blocks = response.content.map((c) => c.type).join(',') || 'vide';
+    throw new Error(
+      `Pas de réponse texte reçue de Claude (stop_reason=${response.stop_reason ?? '?'}, blocs=[${blocks}])`,
+    );
   }
   log(`Claude raw text first 500 (${label}):`, textBlock.text.slice(0, 500));
 
