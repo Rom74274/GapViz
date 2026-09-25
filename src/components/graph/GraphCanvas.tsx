@@ -13,6 +13,7 @@ import { db } from '@/lib/db';
 import {
   buildGraph,
   isClickable,
+  pickPrimaryColor,
   type CenterNode,
   type ClusterMetaNode,
   type GraphNode,
@@ -156,6 +157,21 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
     [graph],
   );
 
+  // Recalcul des couleurs quand on restreint les concurrents (activeSites) : un
+  // mot-clé partagé se RECOLORE sur les seules sources encore sélectionnées (sa
+  // couleur cesse d'être celle d'un concurrent retiré). null = pas de restriction.
+  const effectiveColors = useMemo(() => {
+    if (!graph || filters.activeSites === null) return null;
+    const active = new Set(filters.activeSites);
+    const map = new Map<string, string>();
+    for (const n of graph.nodes) {
+      if (n.kind !== 'keyword') continue;
+      const selected = n.sources.filter((sr) => active.has(sr.domain));
+      if (selected.length > 0) map.set(n.id, pickPrimaryColor(selected));
+    }
+    return map;
+  }, [graph, filters.activeSites]);
+
   // Update opacity targets when visibility changes.
   useEffect(() => {
     if (!graph) return;
@@ -268,6 +284,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
       opacities: opMap,
       searchMatchIds,
       oppGlow: filters.gapOnly ? oppGlow : null,
+      effectiveColors,
     });
 
     drawClusterAndCenterLabels(ctx, graph.nodes, t.k, fade, opMap);
@@ -1048,6 +1065,9 @@ interface NodeRenderState {
   // Filtre « Opportunités » actif : map<id, intensité 0..1> des SEULES vraies
   // opportunités (top des gaps par score). null si le filtre est inactif.
   oppGlow: Map<string, number> | null;
+  // Couleurs recalculées quand des concurrents sont retirés (activeSites).
+  // null = pas de restriction → on garde n.primaryColor.
+  effectiveColors: Map<string, string> | null;
 }
 
 function searchDim(s: NodeRenderState, id: string): number {
@@ -1121,7 +1141,8 @@ function drawKeyword(
   ctx.globalAlpha = baseAlpha;
   ctx.beginPath();
   ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-  ctx.fillStyle = n.primaryColor;
+  // Couleur recalculée si des concurrents sont retirés, sinon couleur d'origine.
+  ctx.fillStyle = s.effectiveColors?.get(n.id) ?? n.primaryColor;
   ctx.fill();
   // Bordure subtile.
   ctx.strokeStyle = `rgba(10, 10, 26, ${0.5 * baseAlpha})`;

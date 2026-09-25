@@ -353,7 +353,7 @@ function buildInterClusterLinks(
 // Helpers
 // ---------------------------------------------------------------------------
 
-function pickPrimaryColor(sources: NodeSource[]): string {
+export function pickPrimaryColor(sources: NodeSource[]): string {
   if (sources.length === 0) return '#6a6a8a';
   const me = sources.find((s) => s.isMe);
   if (me) return me.color;
